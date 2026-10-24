@@ -1,0 +1,100 @@
+{
+  "created_at": "2026-10-16T05:51:40.391648+00:00",
+  "dataset_id": "56164845-3080-4176-932c-094d5feb1bda",
+  "end_date": "2025-10-29",
+  "file_hashes": {
+    "daily_sales.csv": "d9ca3b4297d250d4eb0dca01141e05b46f91c639dd29a06496cc744ef20a97b2",
+    "fx_rates.csv": "49dd3ad13e11c2a1d991d97370980a2e12f7cabca9b53ff03070ccddf5094105",
+    "inventory.csv": "57294e046755e6f705ce1e2e4cad3663511db55c1feef9710e95ee0ab227b5c6",
+    "products.csv": "756f1210ced22e8ee7ca31ab73cff3106783abb8bddb367e9fb0fb1aa8dbf178",
+    "purchase_orders.csv": "12b10b7857a23c6e2cb1c47e1f997803f8f6da7dd841160e6a3f554315057528",
+    "supplier_quotes.csv": "3e813900219dac6483413ea12182c3d6cb2464611e68959fb19f284a07ace609"
+  },
+  "generator_configuration": {
+    "days": 14,
+    "seed": 42,
+    "sku_count": 5,
+    "start_date": "2025-10-16"
+  },
+  "provenance": "synthetic",
+  "reporting_currency": "PKR",
+  "row_counts": {
+    "daily_sales": 70,
+    "fx_rates": 28,
+    "inventory": 5,
+    "products": 5,
+    "purchase_orders": 12,
+    "supplier_quotes": 5
+  },
+  "schema_version": "1.0",
+  "seed": 42,
+  "start_date": "2025-10-16",
+  "synthetic_notice": "All business records and FX rates are fictional synthetic data.",
+  "timezone": "Asia/Karachi",
+  "validation_summary": {
+    "blocking_errors": [],
+    "closed_store_calendar_days": 0,
+    "closed_store_sku_days": 0,
+    "date_range": {
+      "end": "2025-10-29",
+      "start": "2025-10-16"
+    },
+    "exchange_rates": {
+      "missing": [],
+      "stale": []
+    },
+    "freshness_policy": {
+      "fx_days": 3,
+      "quote_days": 30
+    },
+    "inventory": {
+      "available_units": 235,
+      "on_hand_units": 235,
+      "reserved_units": 0
+    },
+    "product_count": 5,
+    "purchase_orders": {
+      "cancelled": 2,
+      "open": 5,
+      "received": 5
+    },
+    "quotations": {
+      "expired": [],
+      "missing": [],
+      "stale": []
+    },
+    "readiness": {
+      "cost_blockers": [],
+      "current_cost_inputs_available": true,
+      "model_training_assessed": false,
+      "note": "Schema validity does not establish future model sufficiency or recommendation readiness."
+    },
+    "row_counts": {
+      "daily_sales": 70,
+      "fx_rates": 28,
+      "inventory": 5,
+      "products": 5,
+      "purchase_orders": 12,
+      "supplier_quotes": 5
+    },
+    "sales_coverage": {
+      "actual_sku_days": 70,
+      "expected_sku_days": 70,
+      "fraction": 1.0
+    },
+    "schema_valid": true,
+    "stockout_affected_sku_days": 18,
+    "warnings": [
+      {
+        "code": "censored_sales",
+        "message": "18 SKU-days may have stock-constrained sales"
+      },
+      {
+        "code": "overdue_orders",
+        "items": [
+          "PO-CHG-001-0003"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+sku,name,category,supplier_id,current_price_pkr,historical_unit_cost_pkr,target_margin,default_lead_days,safety_days,review_days,moq,pack_size
+CHG-001,USB-C charger 1 (synthetic),chargers,SUP-01,1846.96,1272.07,0.20,5,0,7,6,2
+CBL-002,Braided cable 2 (synthetic),cables,SUP-02,325.71,237.00,0.21,6,3,8,12,3
+HDP-003,Wireless headphones 3 (synthetic),headphones,SUP-03,4787.68,3496.71,0.22,7,4,9,18,4
+PWB-004,Power bank 4 (synthetic),power banks,SUP-04,2145.21,1507.93,0.23,8,2,7,24,2
+LST-005,Laptop stand 5 (synthetic),laptop stands,SUP-05,1971.72,1419.67,0.20,9,3,8,6,3

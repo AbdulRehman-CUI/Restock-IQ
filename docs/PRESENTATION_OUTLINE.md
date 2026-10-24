@@ -1,0 +1,10 @@
+# Six-slide handoff
+
+1. **Problem: historical margin can hide replacement funding risk.** Old cost versus the next landed cost; quantities, delivery timing and available cash all matter. Historical gross difference is not net profit.
+2. **Workflow: retailer-controlled decisions.** Import six CSVs or generate synthetic data → inspect quality → train/evaluate → forecast → saved recommendations → hypothetical comparison → local review and export. All steps run locally; writes require explicit submission.
+3. **Data and ML.** Default synthetic history: 20 SKUs × 365 days. Chronological train/validation/test splits; observed stockout-affected targets and closures are excluded appropriately. Baseline and Random Forest, selected using paired 7-day validation MAE. Persisted validation MAE: 3.9645 / 3.7846; test: 4.1963 / 3.9139 units/product-day. Per-product exceptions and sample counts remain available.
+4. **Decision engine.** Origin-safe quotes/FX, replacement margin, explicit price rounding/caps, stock/receipt projection, overdue uncertainty, MOQ and pack size, coverage candidate versus order-now flag, finite forecast support. Demand is held fixed under scenarios.
+5. **Demonstration and measured software outputs.** Preserved base `edd2f0b6` versus scenario `68bd9829`, sharing forecast `9535e13b`, origin 2026-10-15. FX +10%, lead +7, margin 20%: order-now count 7 → 19, expedite 5 → 18. These are hypothetical decision outputs on synthetic records. Use the current API cash cards, inclusion counts and saved metadata; never claim revenue, profit uplift or savings from these values.
+6. **Limits and next pilot.** No calibrated confidence bands, demand elasticity, live FX or purchasing integration. Thirty-day cumulative evaluation lacks sufficient complete windows. Margins omit operating expenses/taxes. Pilot with actual retailer records and prospective evaluation; review and approval remain human responsibilities.
+
+See DEMO_SCRIPT.md for precise preserved IDs and narration. Capture only actual application screenshots, with selected run context; no fabricated visuals are verification evidence.

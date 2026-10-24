@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "restockiq"
+version = "0.1.0"
+description = "Offline synthetic inventory data foundation for RestockIQ"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi==0.115.12", "pydantic==2.11.5", "SQLAlchemy==2.0.41",
+  "numpy==2.2.6", "pandas==2.2.3", "python-multipart==0.0.20",
+  "uvicorn==0.34.2", "python-dotenv==1.1.0", "tzdata==2025.2",
+  "scikit-learn==1.6.1", "joblib==1.4.2",
+  "streamlit==1.45.1", "plotly==6.1.2", "httpx==0.28.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.5", "httpx==0.28.1"]
+
+[project.scripts]
+restockiq = "app.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
