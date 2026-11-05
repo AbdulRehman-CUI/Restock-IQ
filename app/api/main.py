@@ -57,10 +57,11 @@ def create_app(settings: Settings | None = None):
 
     @asynccontextmanager
     async def lifespan(app):
-        db = Database(settings.runtime_dir / "restockiq.sqlite3")
+        db = Database(settings.runtime_dir / "restockiq.sqlite3", settings.database_url)
         db.initialize()
         worker = JobWorker(db, settings)
-        worker.recover_interrupted()
+        if not settings.cloud_mode:
+            worker.recover_interrupted()
         app.state.db, app.state.settings, app.state.worker = db, settings, worker
         try:
             yield
@@ -109,6 +110,13 @@ def create_app(settings: Settings | None = None):
         logger.exception("Unexpected request error; error_id=%s", error_id)
         return JSONResponse({"code": "internal_error", "error_id": error_id,
                              "message": "Unexpected server error; check the local log using error_id."}, 500)
+    if settings.cloud_mode:
+        from app.api.cloud import router, cloud_access
+        from fastapi.staticfiles import StaticFiles
+        from app.core.config import PROJECT_ROOT
+        app.middleware("http")(cloud_access)
+        app.include_router(router)
+        app.mount("/", StaticFiles(directory=PROJECT_ROOT / "app" / "web", html=True), name="web")
     return app
 
 

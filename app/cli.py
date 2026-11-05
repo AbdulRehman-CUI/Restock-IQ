@@ -88,7 +88,7 @@ def main(argv=None):
         import pytest
         from app.core.config import PROJECT_ROOT
         return pytest.main([str(PROJECT_ROOT / "tests"), "-q"])
-    db = Database(settings.runtime_dir / "restockiq.sqlite3")
+    db = Database(settings.runtime_dir / "restockiq.sqlite3", settings.database_url)
     db.initialize()
     try:
         if args.command == "init-db":

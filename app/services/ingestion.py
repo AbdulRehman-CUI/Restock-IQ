@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -27,12 +28,12 @@ def make_manifest(batch, quality, dataset_id, provenance="uploaded", configurati
 
 
 def import_dataset(db, settings, directory: Path, *, dataset_id=None, configuration=None,
-                   synthetic=False, completion_job_id=None, manifest_path=None):
+                   synthetic=False, completion_job_id=None, manifest_path=None, session_override=None):
     batch = read_batch(Path(directory))
     quality = quality_summary(batch, settings)
     dataset_id = dataset_id or str(uuid4())
     manifest = make_manifest(batch, quality, dataset_id, "synthetic" if synthetic else "uploaded", configuration)
-    with db.transaction() as session:
+    with (nullcontext(session_override) if session_override is not None else db.transaction()) as session:
         add_dataset(session, dataset_id, batch, manifest, quality)
         if completion_job_id:
             job = session.get(Job, completion_job_id)

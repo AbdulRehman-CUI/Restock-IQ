@@ -19,6 +19,8 @@ class Settings:
     data_dir: Path = PROJECT_ROOT / "data"
     runtime_dir: Path = PROJECT_ROOT / "runtime"
     artifact_dir: Path = PROJECT_ROOT / "artifacts"
+    database_url: str | None = None
+    cloud_mode: bool = False
     max_upload_bytes: int = 12 * 1024 * 1024
     fx_stale_days: int = 3
     quote_stale_days: int = 30
@@ -33,10 +35,13 @@ class Settings:
     @classmethod
     def from_env(cls):
         load_dotenv(PROJECT_ROOT / ".env", override=False)
+        cloud = os.getenv("RESTOCKIQ_CLOUD", "0") == "1"
         return cls(
-            data_dir=resolve_path(os.getenv("RESTOCKIQ_DATA_DIR", "data")),
-            runtime_dir=resolve_path(os.getenv("RESTOCKIQ_RUNTIME_DIR", "runtime")),
-            artifact_dir=resolve_path(os.getenv("RESTOCKIQ_ARTIFACT_DIR", "artifacts")),
+            database_url=os.getenv("DATABASE_URL"),
+            cloud_mode=cloud,
+            data_dir=resolve_path(os.getenv("RESTOCKIQ_DATA_DIR", "/tmp/restockiq/data" if cloud else "data")),
+            runtime_dir=resolve_path(os.getenv("RESTOCKIQ_RUNTIME_DIR", "/tmp/restockiq/runtime" if cloud else "runtime")),
+            artifact_dir=resolve_path(os.getenv("RESTOCKIQ_ARTIFACT_DIR", "/tmp/restockiq/artifacts" if cloud else "artifacts")),
             max_upload_bytes=int(os.getenv("RESTOCKIQ_MAX_UPLOAD_BYTES", 12 * 1024 * 1024)),
             fx_stale_days=int(os.getenv("RESTOCKIQ_FX_STALE_DAYS", 3)),
             quote_stale_days=int(os.getenv("RESTOCKIQ_QUOTE_STALE_DAYS", 30)),

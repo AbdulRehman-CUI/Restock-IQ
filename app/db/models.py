@@ -1,13 +1,13 @@
 """Dataset-scoped entities; scaled integer columns preserve Decimal exactly."""
 from decimal import Decimal
 from sqlalchemy import (JSON, Boolean, CheckConstraint, Date, Float, ForeignKey, ForeignKeyConstraint,
-                        Integer, String, UniqueConstraint, DDL, event)
+                        Integer, BigInteger, LargeBinary, String, UniqueConstraint, DDL, event)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
 
 class ScaledDecimal(TypeDecorator):
-    impl = Integer
+    impl = BigInteger
     cache_ok = True
 
     def __init__(self, scale=2, **kwargs):
@@ -275,3 +275,40 @@ for operation in ("UPDATE", "DELETE"):
         f"CREATE TRIGGER actions_no_{operation.lower()} BEFORE {operation} ON recommendation_actions "
         "BEGIN SELECT RAISE(ABORT, 'Recommendation actions are append-only'); END"
     ).execute_if(dialect="sqlite"))
+
+
+class ArtifactFile(Base):
+    """Application-written artifacts only; never populated by an upload endpoint."""
+    __tablename__ = "artifact_files"
+    model_id: Mapped[str] = mapped_column(String, primary_key=True)
+    filename: Mapped[str] = mapped_column(String, primary_key=True)
+    payload: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class UploadBatch(Base):
+    __tablename__ = "upload_batches"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[str] = mapped_column(String)
+    total_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String, default="open")
+
+
+class UploadChunk(Base):
+    __tablename__ = "upload_chunks"
+    batch_id: Mapped[str] = mapped_column(ForeignKey("upload_batches.id", ondelete="CASCADE"), primary_key=True)
+    filename: Mapped[str] = mapped_column(String, primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, primary_key=True)
+    payload: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+# Match the local append-only guarantees on PostgreSQL too.
+for table in (Scenario.__table__, RecommendationAction.__table__):
+    event.listen(table, "after_create", DDL("""
+        CREATE OR REPLACE FUNCTION restockiq_reject_mutation() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'Saved records are immutable; create a new record'; END;
+        $$ LANGUAGE plpgsql
+    """).execute_if(dialect="postgresql"))
+    event.listen(table, "after_create", DDL(
+        f"CREATE TRIGGER {table.name}_immutable BEFORE UPDATE OR DELETE ON {table.name} "
+        "FOR EACH ROW EXECUTE FUNCTION restockiq_reject_mutation()"
+    ).execute_if(dialect="postgresql"))

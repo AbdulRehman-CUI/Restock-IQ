@@ -32,6 +32,7 @@ class JobWorker:
                 model.error = "Application stopped during training. Submit training again to retry."
 
     def submit_demo(self, config: GeneratorConfig):
+        self.recover_stale()
         job_id, now = str(uuid4()), utc_now()
         try:
             with self.db.transaction() as session:
@@ -41,7 +42,8 @@ class JobWorker:
         except IntegrityError as exc:
             raise JobConflict("A heavy job is already queued or running; poll its job ID before starting another") from exc
         try:
-            self.executor.submit(self.run_demo, job_id, config)
+            if not self.settings.cloud_mode:
+                self.executor.submit(self.run_demo, job_id, config)
         except Exception:
             self.update(job_id, status="failed", stage="failed", active_key=None,
                         error="Worker unavailable. Restart the application and retry.")
@@ -49,6 +51,7 @@ class JobWorker:
         return get_job(self.db, job_id)
 
     def submit_training(self, dataset_id, seed=42):
+        self.recover_stale()
         get_summary(self.db, dataset_id)  # Fail synchronously for unknown dataset IDs.
         if not 0 <= seed <= 2**32 - 1:
             raise ValueError("seed must be between 0 and 4294967295")
@@ -61,7 +64,8 @@ class JobWorker:
         except IntegrityError as exc:
             raise JobConflict("A heavy job is already queued or running; retry after it completes") from exc
         try:
-            self.executor.submit(self.run_training, job_id, str(dataset_id), seed)
+            if not self.settings.cloud_mode:
+                self.executor.submit(self.run_training, job_id, str(dataset_id), seed)
         except Exception:
             self.update(job_id, status="failed", stage="failed", active_key=None,
                         error="Worker unavailable. Restart the application and retry.")
@@ -102,6 +106,37 @@ class JobWorker:
             logger.exception("Demo job failed; error_id=%s", error_id)
             self.update(job_id, status="failed", stage="failed", active_key=None, error_id=error_id,
                         error="Demo generation failed. Check the local log using error_id and retry.")
+
+    def recover_stale(self):
+        if not self.settings.cloud_mode:
+            return
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+        with self.db.transaction() as session:
+            stale = session.scalars(select(Job).where(Job.status.in_(["queued", "running"]),
+                                                     Job.updated_at < cutoff).with_for_update())
+            for job in stale:
+                job.status, job.stage, job.active_key = "failed", "interrupted", None
+                job.error = "Execution was interrupted or exceeded the hosting limit. Completed steps remain saved; retry this step."
+                for model in session.scalars(select(ModelRun).where(ModelRun.job_id == job.id, ModelRun.status == "running")):
+                    model.status, model.error = "failed", job.error
+
+    def execute(self, job_id):
+        self.recover_stale()
+        with self.db.transaction() as session:
+            job = session.scalar(select(Job).where(Job.id == str(job_id)).with_for_update())
+            if job is None:
+                from app.core.errors import NotFound
+                raise NotFound("Job not found")
+            if job.status != "queued":
+                return get_job(self.db, job_id)
+            job.status, job.updated_at = "running", utc_now()
+            config = dict(job.configuration)
+        if config.get("task") == "training":
+            self.run_training(str(job_id), config["dataset_id"], config["seed"])
+        else:
+            self.run_demo(str(job_id), GeneratorConfig.model_validate(config))
+        return get_job(self.db, job_id)
 
     def close(self):
         self.executor.shutdown(wait=True, cancel_futures=False)
