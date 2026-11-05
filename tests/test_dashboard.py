@@ -156,7 +156,10 @@ def test_streamlit_navigation_forms_and_no_rerun_mutations(settings, analysis, b
             app = app_test().run()
             assert not app.exception, app.exception
             assert len(app.metric) == 4
-            assert set(downloads) == {p for _, p, _ in selected_exports(analysis['forecast_run_id'], analysis['recommendation_run_id'])}
+            assert downloads == []  # Opening an expander must not fetch reports.
+            next(s for s in app.selectbox if s.label == 'Report').set_value(2).run()
+            next(b for b in app.button if b.label == 'Prepare download').click().run()
+            assert downloads == [f"recommendations/{analysis['recommendation_run_id']}/export"]
             assert [t.value for t in app.title] == ["Overview"]
             next(s for s in app.multiselect if s.label == "Additional columns").set_value(["Current price", "Replacement cost"]).run()
             frame = app.dataframe[0].value
@@ -171,18 +174,22 @@ def test_streamlit_navigation_forms_and_no_rerun_mutations(settings, analysis, b
             assert not app.exception, app.exception
             assert any(t.value == "Products" for t in app.title)
             assert app.session_state['product'] == query
+            app.checkbox(key='action_show_review').check().run()
             next(b for b in app.button if b.label == "Save local review").click().run()
             assert not app.exception, app.exception
             app.run()
             next(b for b in app.button if b.label == "Save local review").click().run()
             assert writes.call_count == 1
-            app.radio(key="page").set_value("Scenarios").run()
+            app.radio(key="page").set_value("What-if Scenarios").run()
             assert not app.exception, app.exception
-            app.selectbox(key="scenario_preset").set_value("FX +10% / lead +7").run()
+            app.selectbox(key="scenario_preset").set_value("FX increase plus delivery delay").run()
             assert writes.call_count == 1
             next(b for b in app.button if b.label == "Run scenario").click().run()
             assert not app.exception, app.exception
             assert writes.call_count == 3
+            next(b for b in app.button if b.label == 'Run scenario').click().run()
+            assert not app.exception, app.exception
+            assert writes.call_count == 3  # An identical form submission reuses its saved result.
 
             assert any(m.label == "Order now · scenario" for m in app.metric)
             saved_result = app.session_state["scenario_result"]
@@ -195,6 +202,9 @@ def test_streamlit_navigation_forms_and_no_rerun_mutations(settings, analysis, b
             assert not app.exception, app.exception
             assert app.session_state['scenario_result'] == saved_result
             assert app.session_state['saved_scenario'] == backend.get('/api/v1/recommendations/' + saved_result).json()['scenario_id']
+            assert f'recommendations/{saved_result}/export' not in downloads
+            next(s for s in app.selectbox if s.label == 'Report').set_value(2).run()
+            next(b for b in app.button if b.label == 'Prepare download').click().run()
             assert f'recommendations/{saved_result}/export' in downloads
             assert backend.get('/api/v1/recommendations/' + analysis['recommendation_run_id']).json() == analysis
             app.run()
@@ -229,23 +239,31 @@ def test_streamlit_empty_database_to_overview(settings):
             next(b for b in app.button if b.label == 'Validate and import dataset').click().run()
             assert not app.exception and any('missing files' in e.value for e in app.error)
             assert writes == []
+            app.radio(key='setup_source').set_value('Synthetic dataset').run()
             next(n for n in app.number_input if n.label == "Product count").set_value(5)
             next(b for b in app.button if b.label == "Generate demo dataset").click().run()
             def finish_job():
+                job_id = app.session_state['job']
                 deadline = time.monotonic() + 90
-                while "job" in app.session_state and time.monotonic() < deadline:
+                # Production runs Streamlit and FastAPI in separate processes.
+                # In this shared-process harness, AppTest mutates sys.path during
+                # reruns; avoid racing training's dependency-metadata discovery.
+                while time.monotonic() < deadline:
+                    job = backend.get(f'/api/v1/jobs/{job_id}').json()
+                    if job['status'] in ('completed', 'failed'):
+                        break
                     time.sleep(.1)
-                    app.run()
+                assert job['status'] == 'completed', job
+                app.run()  # The UI consumes the real terminal status and stops polling.
                 assert "job" not in app.session_state
                 assert not app.exception, app.exception
             finish_job()
             assert app.session_state["dataset"]
+            next(b for b in app.button if b.label == 'Continue to model preparation').click().run()
             next(b for b in app.button if b.label == "Train and evaluate").click().run()
             finish_job()
             assert app.session_state["model"]
-            next(b for b in app.button if b.label == "Generate forecast").click().run()
-            assert not app.exception, app.exception
-            next(b for b in app.button if b.label == "Generate base recommendations").click().run()
+            next(b for b in app.button if b.label == 'Generate analysis').click().run()
             assert not app.exception, app.exception
             next(b for b in app.button if b.label == "Open Overview").click().run()
             assert not app.exception, app.exception
@@ -263,7 +281,7 @@ def test_streamlit_empty_database_to_overview(settings):
 def test_presentation_formats_and_api_only_boundary():
     import ast
     from app.ui.common import amount, compact_money, number, percent, line
-    from app.ui.scenario import unapplied
+    from app.ui.scenario import unapplied, comparison_changed
     import plotly.graph_objects as go
     assert amount('1234.50') == 'PKR 1,234.50'
     assert compact_money('1234567.89') == 'PKR 1.23M'
@@ -274,6 +292,10 @@ def test_presentation_formats_and_api_only_boundary():
             'extra_lead_days': 0, 'target_margin_override': None}
     assert not unapplied(base, {**base, 'fx_change_pct': '0.0000'})
     assert unapplied(base, {**base, 'target_margin_override': '0'})
+    assert comparison_changed({'base': None, 'scenario': '0'})
+    assert comparison_changed({'base': '10.00', 'scenario': None})
+    assert not comparison_changed({'base': None, 'scenario': None})
+    assert not comparison_changed({'base': '0.00', 'scenario': '0'})
     fig = go.Figure()
     line(fig, ['2026-10-16', '2026-10-17'], ['12.345', None], 'Stock')
     assert tuple(fig.data[0].y) == (12.345, None)

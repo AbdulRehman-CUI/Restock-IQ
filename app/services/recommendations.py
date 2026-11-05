@@ -176,24 +176,25 @@ def create_recommendations(db, settings, dataset_id, forecast_run_id, scenario_i
     return get_recommendations(db, run_id)
 
 
-def get_recommendations(db, run_id):
+def get_recommendations(db, run_id, *, include_products=True):
     with db.sessions() as session:
         run = session.get(RecommendationRun, str(run_id))
         if run is None:
             raise NotFound("Recommendation run not found")
         result = {"recommendation_run_id": run.id, **{key: getattr(run, key) for key in (
             "dataset_id", "forecast_run_id", "model_id", "scenario_id", "origin", "horizon_days", "calculation_version", "created_at")}, **run.details}
-        result["products"] = [p.result for p in session.scalars(select(RecommendationProduct).where(
-            RecommendationProduct.run_id == run.id).order_by(RecommendationProduct.sku))]
+        if include_products:
+            result["products"] = list(session.scalars(select(RecommendationProduct.result).where(
+                RecommendationProduct.run_id == run.id).order_by(RecommendationProduct.sku)))
         return wire(result)
 
 
 def get_product(db, run_id, sku):
-    run = get_recommendations(db, run_id)
-    product = next((p for p in run["products"] if p["sku"] == sku), None)
-    if product is None:
-        raise NotFound("Product not found in recommendation run")
-    return {"recommendation_run_id": run["recommendation_run_id"], "product": product}
+    with db.sessions() as session:
+        product = session.get(RecommendationProduct, (str(run_id), sku))
+        if product is None:
+            raise NotFound("Product not found in recommendation run")
+        return {"recommendation_run_id": str(run_id), "product": product.result}
 
 
 def compare_runs(db, base_id, scenario_id):

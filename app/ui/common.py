@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from html import escape
+from pathlib import Path
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -10,32 +11,29 @@ NO_ACTION = "Projected shortages assume no additional recommended orders are pla
 COLORS = dict(background="#F5F7FA", surface="#FFFFFF", text="#152238", muted="#64748B",
               border="#E2E8F0", teal="#0F766E", hover="#115E59", subtle="#ECFDF5",
               warning="#B45309", warning_bg="#FFFBEB", critical="#B91C1C",
-              critical_bg="#FEF2F2", blue="#2563EB")
+              critical_bg="#FEF2F2", blue="#2563EB", cyan="#0891B2")
 
 
 def theme():
-    # Stable Streamlit component selectors only; sidebar keeps native light controls.
-    st.markdown(f"""<style>
-    .stApp {{background:{COLORS['background']};color:{COLORS['text']};
-      font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
-    .block-container {{padding-top:2rem;padding-bottom:3rem;max-width:1560px}}
-    h1 {{font-size:2rem!important;letter-spacing:-.04em}}
-    h2 {{font-size:1.3rem!important;letter-spacing:-.02em}}
-    h3 {{font-size:1.05rem!important}}
-    [data-testid="stSidebar"] {{background:{COLORS['surface']};border-right:1px solid {COLORS['border']}}}
-    [data-testid="stMetric"] {{background:{COLORS['surface']};border:1px solid {COLORS['border']};
-      border-radius:10px;padding:16px;min-height:110px}}
-    [data-testid="stMetricValue"] {{font-size:1.6rem;font-variant-numeric:tabular-nums;letter-spacing:-.03em}}
-    [data-testid="stCaptionContainer"] {{color:{COLORS['muted']}}}
-    .rq-brand {{font-size:1.5rem;font-weight:700;letter-spacing:-.05em;margin-bottom:4px}}
-    .rq-brand span {{color:{COLORS['teal']}}}
-    .rq-badge {{display:inline-block;border-radius:5px;padding:4px 9px;font-size:.8rem;
-      background:{COLORS['subtle']};color:{COLORS['hover']};margin:0 6px 6px 0}}
-    .rq-badge.warning {{background:{COLORS['warning_bg']};color:{COLORS['warning']}}}
-    .rq-badge.critical {{background:{COLORS['critical_bg']};color:{COLORS['critical']}}}
-    .rq-context {{font-size:.85rem;color:{COLORS['muted']};margin-bottom:1.2rem;line-height:1.8}}
-    button:focus-visible {{outline:2px solid {COLORS['teal']};outline-offset:3px}}
-    </style>""", unsafe_allow_html=True)
+    """Local CSS uses authored classes and documented container key classes."""
+    tokens = ";".join(f"--ms-{key.replace('_', '-')}: {value}" for key, value in COLORS.items())
+    css = Path(__file__).with_name("styles.css").read_text(encoding="utf-8")
+    st.markdown(f"<style>:root {{{tokens}}}\n{css}</style>", unsafe_allow_html=True)
+    st.session_state['_motion_card_index'] = 0
+
+
+def first_entrance(key):
+    seen = st.session_state.setdefault('_motion_seen', [])
+    if key in seen:
+        return False
+    st.session_state['_motion_seen'] = [*seen, key]
+    return True
+
+
+def brand():
+    entrance = " ms-brand-enter" if first_entrance('brand') else ""
+    st.markdown(f'<div class="rq-brand{entrance}">Margin<span>Shift</span><i aria-hidden="true"></i></div>', unsafe_allow_html=True)
+
 
 
 def badge(text, tone=""):
@@ -43,13 +41,28 @@ def badge(text, tone=""):
 
 
 def header(title, description):
-    st.title(title)
-    st.caption(description)
+    changed = st.session_state.get('_motion_page') != title
+    st.session_state['_motion_page'] = title
+    key = 'ms-heading-overview' if title == 'Overview' else 'ms-heading-page'
+    motion = 'ms-page-in var(--ms-page-duration) ease-out both' if changed else 'none'
+    st.markdown(f'<style>.st-key-{key} {{animation:{motion}}}</style>', unsafe_allow_html=True)
+    with st.container(key=key):
+        st.markdown('<p class="ms-eyebrow">DECISION WORKSPACE</p>', unsafe_allow_html=True)
+        st.title(title)
+        st.caption(description)
 
 
-def metric(column, label, value, caption):
-    column.metric(label, value)
-    column.caption(caption)
+def metric(column, label, value, caption, **kwargs):
+    index = st.session_state.get('_motion_card_index', 0)
+    st.session_state['_motion_card_index'] = index + 1
+    key = f"ms-card-{index}"
+    animate = first_entrance(f"card:{st.session_state.get('_motion_page')}:{label}")
+    motion = f"ms-card-in var(--ms-card-duration) {min(index, 3) * 55}ms both" if animate else "none"
+    st.markdown(f'<style>.st-key-{key} {{animation:{motion}}}</style>', unsafe_allow_html=True)
+    with column.container(key=key, border=True):
+        st.metric(label, value, **kwargs)
+        st.caption(caption)
+
 
 
 def compact_money(value):
@@ -117,11 +130,23 @@ def saved_download(base_url, path):
 def error(exc):
     st.error(str(exc))
     if exc.payload.get("errors"):
-        table(exc.payload["errors"])
+        corrections = {
+            'missing': 'Supply the required value / column.',
+            'missing_column': 'Add the required column using the downloadable template header.',
+            'missing_file': 'Include this CSV with its header in the six-file batch.',
+            'unknown_column': 'Remove this column; use the downloadable contract headers.',
+            'duplicate_record': 'Keep one record per required key.',
+            'missing_sales_day': 'Include every product and calendar date; record zero sales explicitly.',
+            'missing_snapshot': 'Add inventory for this product on the final sales date.',
+            'snapshot_origin_mismatch': 'Use the final sales date for every inventory snapshot.',
+            'unknown_product': 'Add this SKU to products.csv or correct the reference.',
+        }
+        table([{**row, 'Suggested correction': corrections.get(row.get('code'),
+            'Correct the value using the message and CSV contract, then resubmit all six files.')} for row in exc.payload['errors']])
     if exc.payload:
         with st.expander("Detailed error report"):
             st.json(exc.payload)
-    st.caption("Completed runs remain saved. If a request timed out, refresh discovery before submitting again.")
+    st.caption("Completed steps remain saved. After a timeout, select Reconnect / refresh to check for a saved result before submitting again.")
 
 
 def choose(label, rows, key, formatter=None):
@@ -149,6 +174,8 @@ def chart(fig, title, yaxis, xaxis="Date", height=350):
                       colorway=[COLORS["teal"], COLORS["blue"], COLORS["critical"]],
                       margin=dict(l=16, r=16, t=55, b=80), height=height,
                       legend=dict(orientation="h", y=-0.22, x=0), hovermode="x unified",
+                      transition=dict(duration=0), separators=".,",
+                      hoverlabel=dict(bgcolor=COLORS["surface"], font_color=COLORS["text"]),
                       font=dict(color=COLORS["text"], family="Segoe UI, sans-serif", size=12))
     fig.update_xaxes(showgrid=False, automargin=True)
     if xaxis == "Date":
@@ -164,6 +191,6 @@ def line(fig, x, y, name, color=COLORS["teal"], dash="solid", **kwargs):
 
 def require_run(context):
     if not context.get("recommendation"):
-        st.info("Create or select a recommendation run in Data & Settings to view decisions.")
+        st.info('Select a saved analysis in the sidebar, or follow Data & Settings to prepare one.')
         return False
     return True

@@ -1,20 +1,22 @@
 from decimal import Decimal
 import streamlit as st
 from app.ui.common import (choose, saved_get, amount, percent, compact_money, number,
-                           header, table, money_column, badge)
+                           header, table, money_column, badge, metric)
 from app.ui.state import margin_fraction
+from app.ui.api_client import APIError
+from app.ui.common import error
 
 DRAFT = {"name": "Cost and delivery scenario", "fx": 0.0, "supplier": 0.0, "freight": 0.0, "lead": 0, "override": False, "margin": 20.0}
-PRESETS = ["Custom assumptions", "FX +10% / lead +7", "Phase 3 demonstration"]
+PRESETS = ['Custom assumptions', 'FX increase only', 'Delivery delay only', 'FX increase plus delivery delay']
 
 
 def preset(kind):
     for key, value in DRAFT.items():
         st.session_state["scenario_" + key] = value
-    if kind not in ("Reset", "Custom assumptions"):
-        st.session_state.update(scenario_fx=10.0, scenario_lead=7)
-    if kind == "Phase 3 demonstration":
-        st.session_state["scenario_override"] = True
+    if kind in ('FX increase only', 'FX increase plus delivery delay'):
+        st.session_state['scenario_fx'] = 10.0
+    if kind in ('Delivery delay only', 'FX increase plus delivery delay'):
+        st.session_state['scenario_lead'] = 7
     if kind == "Reset":
         st.session_state["scenario_preset"] = "Custom assumptions"
 
@@ -32,10 +34,21 @@ def unapplied(draft, saved):
                (None if saved[k] is None else Decimal(str(saved[k]))) for k in draft)
 
 
+def comparison_changed(pair):
+    if pair['base'] is None or pair['scenario'] is None:
+        return (pair['base'] is None) != (pair['scenario'] is None)
+    return Decimal(str(pair['base'])) != Decimal(str(pair['scenario']))
+
+
 def assumptions_caption(a):
     return (f"FX {Decimal(str(a['fx_change_pct'])):+g}% · Supplier {Decimal(str(a['supplier_price_change_pct'])):+g}% · "
             f"Freight +{amount(a['additional_freight_pkr'])}/unit · Lead +{a['extra_lead_days']} days · "
             f"Target margin {percent(a['target_margin_override']) if a['target_margin_override'] is not None else 'product defaults'}")
+
+
+def calculate(client, context, base, scenario_id):
+    return client.post('recommendations', {'dataset_id': context['dataset'], 'forecast_run_id': context['forecast'],
+        'scenario_id': scenario_id, 'pricing': base['effective_settings']['pricing']})
 
 
 def render_results(client, context, base, result_id):
@@ -44,10 +57,13 @@ def render_results(client, context, base, result_id):
         st.info("Set assumptions and select Run scenario, or choose a saved scenario with compatible results.")
         st.caption("Results will compare against the selected saved base analysis. Changing controls never starts a calculation.")
         return
-    scenario_run = saved_get(client.base_url, f"recommendations/{result_id}")
+    scenario_run = saved_get(client.base_url, f"recommendations/{result_id}/metadata")
     if scenario_run["forecast_run_id"] != context["forecast"] or scenario_run["effective_settings"] != base["effective_settings"]:
         st.info("Select a scenario result with the same forecast and pricing settings as the base analysis.")
         return
+    if st.session_state.get('_motion_result') != result_id:
+        st.session_state['_motion_result'] = result_id
+        st.markdown('<div class="ms-result-update" role="status">Scenario comparison ready · saved results</div>', unsafe_allow_html=True)
     saved = scenario_run["scenario"]
     badge("Hypothetical scenario")
     st.write(saved["name"])
@@ -58,17 +74,17 @@ def render_results(client, context, base, result_id):
         st.warning("Unapplied changes · the draft differs from these saved results.")
     base_id = base["recommendation_run_id"]
     comparison = saved_get(client.base_url, f"recommendations/{base_id}/compare/{result_id}")
-    summaries = [saved_get(client.base_url, f"recommendations/{id}/overview") for id in (base_id, result_id)]
+    workspaces = [saved_get(client.base_url, f"recommendations/{id}/workspace") for id in (base_id, result_id)]
+    summaries = [w['summary'] for w in workspaces]
     cards = st.columns(3)
     for col, label, key in zip(cards[:2], ["Order now · scenario", "Expedite supply · scenario"], ['order_now_products', 'expedite_products']):
         a, b = (s[key] for s in summaries)
-        col.metric(label, b, delta=f"{b-a:+d} products", delta_color="inverse")
-        col.caption(f"Base {a} → Scenario {b}")
+        metric(col, label, b, f"Base {a} → Scenario {b}", delta=f"{b-a:+d} products", delta_color="inverse")
     shared_cash = comparison['aggregate']['estimated_replenishment_cash_pkr']
     cash_delta = shared_cash['delta']
-    cards[2].metric("Coverage cash · scenario", compact_money(shared_cash['scenario']),
+    metric(cards[2], "Coverage cash · scenario", compact_money(shared_cash['scenario']),
+        f"Base: {amount(shared_cash['base'])} · Scenario: {amount(shared_cash['scenario'])} · All common calculable coverage candidates",
         delta=None if cash_delta is None else amount(cash_delta), delta_color="inverse")
-    cards[2].caption(f"Base: {amount(shared_cash['base'])} · Scenario: {amount(shared_cash['scenario'])} · All common calculable coverage candidates")
     st.caption(f"Coverage cash: {'Partial · ' if shared_cash['partial'] else ''}{shared_cash['included_products']} common products / {shared_cash['excluded_products']} excluded. It includes coverage candidates beyond orders required now.")
     st.subheader("Base & scenario")
     table([{"Measure": label, "Base": amount(summaries[0][key]['value']) if key == 'order_now_cash' else str(summaries[0][key]),
@@ -78,11 +94,20 @@ def render_results(client, context, base, result_id):
     for label, summary in zip(["Base", "Scenario"], summaries):
         cash = summary["order_now_cash"]
         st.caption(f"{label} order-now cash: {'Partial · ' if cash['partial'] else ''}{cash['included_products']} included / {cash['excluded_products']} excluded. Each total uses that run's order-now products.")
-    scenario_products = {p["sku"]: p for p in scenario_run["products"]}
-    base_products = {p["sku"]: p for p in base["products"]}
+    scenario_products = {p['sku']: p for p in workspaces[1]['products']}
+    base_products = {p['sku']: p for p in workspaces[0]['products']}
     view = st.selectbox("Product comparison", ["Pricing & margin", "Stock & replenishment"])
     rows = []
+    affected_only = st.checkbox('Show affected products only', value=True)
+    affected_count = 0
     for p in comparison["products"]:
+        changed = any(comparison_changed(p[key]) for key in
+            ('replacement_cost_pkr', 'suggested_price_pkr', 'current_replacement_margin', 'expected_unmet_units', 'order_quantity', 'estimated_replenishment_cash_pkr')) or p['first_shortage_date']['base'] != p['first_shortage_date']['scenario']
+        changed = changed or any(base_products[p['sku']]['inventory'][key] != scenario_products[p['sku']]['inventory'][key]
+            for key in ('order_required', 'expedite_required'))
+        affected_count += bool(changed)
+        if affected_only and not changed:
+            continue
         sku = p['sku']
         row = {"Product": p['name'], "SKU": sku}
         if view == "Pricing & margin":
@@ -97,6 +122,7 @@ def render_results(client, context, base, result_id):
                         "Unmet demand difference (units)": number(p['expected_unmet_units']['delta']),
                         "Shortage shift (days)": p['first_shortage_date']['shift_days']})
         rows.append(row)
+    st.caption(f'{affected_count} of {len(comparison["products"])} products have changed results, availability, or supply urgency. Unavailable differences are not treated as zero.')
     table(rows, column_config={**{key: money_column(key) for key in ('Base cost', 'Scenario cost', 'Cost difference', 'Base price', 'Scenario price')},
         "Margin difference (pp)": st.column_config.NumberColumn(format="%.1f pp"),
         "Unmet demand difference (units)": st.column_config.NumberColumn(format="%.1f")})
@@ -107,7 +133,7 @@ def render_results(client, context, base, result_id):
 
 
 def render(client, context):
-    header("Scenarios", "Explore how cost and delivery changes affect your decisions.")
+    header("What-if Scenarios", "Explore how cost and delivery changes affect your decisions.")
     st.caption("Demand is held unchanged; customer response to price changes is not modeled.")
     if not context.get("forecast"):
         st.info("Select or create a forecast in Data & Settings first.")
@@ -123,7 +149,7 @@ def render(client, context):
         if not base_id:
             st.info("Generate base recommendations in Data & Settings first.")
             return
-        base = saved_get(client.base_url, f"recommendations/{base_id}")
+        base = saved_get(client.base_url, f"recommendations/{base_id}/metadata")
         scenarios = client.get("scenarios", dataset_id=context["dataset"], forecast_run_id=context["forecast"])
         active_id = active['recommendation_run_id'] if active else None
         if active and active.get('scenario_id') and st.session_state.get('scenario_active_context') != active_id:
@@ -154,18 +180,17 @@ def render(client, context):
                     scenario_margin=float(a["target_margin_override"] if a["target_margin_override"] is not None else .2) * 100)
                 st.rerun()
     candidate_runs = [r for r in context["runs"] if r.get("scenario_id") and r["scenario_id"] == selected and
-        saved_get(client.base_url, f"recommendations/{r['id']}")["effective_settings"] == base["effective_settings"]]
+        saved_get(client.base_url, f"recommendations/{r['id']}/metadata")["effective_settings"] == base["effective_settings"]]
     if selected and not candidate_runs:
         st.caption("This saved scenario has no result compatible with the selected base settings.")
         if st.button("Calculate recommendations for saved scenario"):
             with st.spinner("Calculating saved scenario…"):
-                result = client.post("recommendations", {"dataset_id": context["dataset"], "forecast_run_id": context["forecast"],
-                    "scenario_id": selected, "pricing": base["effective_settings"]["pricing"]})
+                result = calculate(client, context, base, selected)
             st.session_state["scenario_result"] = result["recommendation_run_id"]
             st.rerun()
     for key, value in DRAFT.items():
         st.session_state.setdefault("scenario_" + key, value)
-    assumptions, results = st.columns([1, 2], gap="large")
+    assumptions, results = st.columns([1, 1.5], gap="large")
     with assumptions:
         st.subheader("Assumptions")
         kind = st.selectbox("Preset", PRESETS, key="scenario_preset", on_change=lambda: preset(st.session_state['scenario_preset']))
@@ -176,27 +201,51 @@ def render(client, context):
             fx = st.number_input("FX change (%)", min_value=-99.9999, max_value=10000.0, step=1.0, format="%.4f", key="scenario_fx")
             supplier = st.number_input("Supplier-price change (%)", min_value=-99.9999, max_value=10000.0, step=1.0, format="%.4f", key="scenario_supplier")
             freight = st.number_input("Additional freight / unit (PKR)", min_value=0.0, max_value=100000000000.0, step=1.0, key="scenario_freight")
-            st.subheader("Supply assumptions")
-            lead = st.number_input("Additional lead time (days)", min_value=0, max_value=3650, key="scenario_lead")
-            st.subheader("Pricing assumptions")
+            st.subheader("Delivery changes")
+            lead = st.number_input("Delivery delay (days)", min_value=0, max_value=3650, key="scenario_lead")
+            st.caption('Shifts expected open-order arrivals and the delivery time for a prospective new order. Already overdue supply remains uncertain.')
+            st.subheader("Optional pricing settings")
             enabled = st.checkbox("Override target margin", key="scenario_override")
             margin = st.number_input("Target-margin override (%)", min_value=0.0, max_value=80.0, step=.1, key="scenario_margin")
+            st.caption('Assumption summary · ' + assumptions_caption(draft_assumptions()))
             st.caption("Unapplied changes · edits here affect results only after submission. Saved base pricing settings are reused exactly.")
             submitted = st.form_submit_button("Run scenario", type="primary", use_container_width=True)
         if submitted:
             body = {"dataset_id": context["dataset"], "forecast_run_id": context["forecast"], "name": name, **draft_assumptions()}
-            with st.spinner("Saving scenario & calculating decisions…"):
-                scenario = client.post("scenarios", body)
-                # Retain the immutable ID if calculation fails; recovery never resubmits it automatically.
-                st.session_state["scenario_created"] = scenario["id"]
-                result = client.post("recommendations", {"dataset_id": context["dataset"], "forecast_run_id": context["forecast"],
-                    "scenario_id": scenario["id"], "pricing": base["effective_settings"]["pricing"]})
-            st.session_state["scenario_result"] = result["recommendation_run_id"]
-            st.session_state['scenario_pending_selection'] = scenario['id']
-            st.session_state['scenario_selected_before'] = (base_id, scenario['id'])
-            st.success("Scenario and analysis saved.")
+            signature = (base_id, name, tuple(draft_assumptions().items()))
+            previous = st.session_state.get('scenario_submission', {})
+            try:
+                st.info("Calculating submitted assumptions. Any previous comparison remains a saved result until this request completes.")
+                with st.spinner("Saving scenario & calculating decisions…"):
+                    if previous.get('signature') == signature:
+                        scenario_id = previous['scenario_id']
+                    else:
+                        scenario_id = client.post('scenarios', body)['id']
+                        previous = {'signature': signature, 'scenario_id': scenario_id}
+                        st.session_state['scenario_submission'] = previous
+                    st.session_state['scenario_created'] = scenario_id
+                    st.session_state['scenario_pending_selection'] = scenario_id
+                    st.session_state.pop('scenario_result', None)
+                    result_id = previous.get('result_id')
+                    if not result_id:
+                        result_id = calculate(client, context, base, scenario_id)['recommendation_run_id']
+                        st.session_state['scenario_submission'] = {**previous, 'result_id': result_id}
+                st.session_state.update(scenario_result=result_id, scenario_selected_before=(base_id, scenario_id))
+                st.session_state.pop('scenario_created', None)
+                st.rerun()
+            except APIError as exc:
+                error(exc)
         if st.session_state.get('scenario_created') and not st.session_state.get('scenario_result'):
-            st.caption("A scenario was saved. Refresh discovery and select it above to recover or calculate its results.")
+            st.info('Your scenario assumptions are saved. Refresh discovery to check for completed results after a timeout. Retry calculation below reuses those assumptions.')
+            if st.button('Retry saved scenario calculation'):
+                result = calculate(client, context, base, st.session_state['scenario_created'])
+                st.session_state['scenario_result'] = result['recommendation_run_id']
+                if st.session_state.get('scenario_submission'):
+                    st.session_state['scenario_submission'] = {**st.session_state['scenario_submission'], 'result_id': result['recommendation_run_id']}
+                st.session_state.pop('scenario_created', None)
+                st.rerun()
     with results:
         result_id = st.session_state.get("scenario_result") or (candidate_runs[0]["id"] if candidate_runs else None)
+        if st.session_state.get('scenario_created'):
+            result_id = None
         render_results(client, context, base, result_id)

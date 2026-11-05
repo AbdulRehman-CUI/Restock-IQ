@@ -27,14 +27,17 @@ class APIClient:
                               timeout=httpx.Timeout(120, connect=4)) as client:
                 response = client.request(method, path.lstrip("/"), **kwargs)
         except httpx.RequestError as exc:
-            raise APIError(f"Cannot reach {self.base_url}. Start the API in a separate terminal: "
+            raise APIError(f"Could not connect to the API at {self.base_url}. Start the backend or update Connection settings. Command: "
                            " .\\.venv\\Scripts\\python.exe -m app.cli serve --port 8000") from exc
         if not response.is_success:
             try:
                 payload = response.json()
             except ValueError:
                 payload = {"message": response.text[:300]}
-            raise APIError(payload.get("message", payload.get("code", "API request failed")), payload, response.status_code)
+            message = payload.get('message')
+            if not message and payload.get('errors'):
+                message = f"Validation found {payload.get('error_count', len(payload['errors']))} issue(s). Correct the listed records and submit again."
+            raise APIError(message or payload.get('code', 'API request failed'), payload, response.status_code)
         return response
 
     def get(self, path, **params):

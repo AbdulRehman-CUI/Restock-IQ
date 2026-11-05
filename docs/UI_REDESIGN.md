@@ -1,5 +1,7 @@
 # RestockIQ UI redesign
 
+Historical report for 24 October 2026. The current workflow and verification are in [USER_GUIDE.md](USER_GUIDE.md) and [REFINEMENT_REPORT.md](REFINEMENT_REPORT.md); the later refinement supersedes the controls described below.
+
 Implemented 24 October 2026 using the existing Streamlit 1.45.1 / Plotly 6.1.2 environment. The UI and README still establish **RestockIQ** as the product name; the workspace directory is named MarginShift. No product rename, frontend migration, new dependency, or backend response change was introduced.
 
 ## Design and layout

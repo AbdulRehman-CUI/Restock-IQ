@@ -1,8 +1,10 @@
-# RestockIQ — Forecasting and Inventory Decision Engine
+# MarginShift — Inventory and Pricing Decisions
 
 An offline data foundation for a fictional Pakistani electronics-accessories retailer. **All generated business records, customer demand, supplier quotes, events, and FX rates are synthetic.** Business timezone: `Asia/Karachi`; reporting currency: `PKR`; prices are tax-exclusive. The default history is **2025-10-16 through 2026-10-15**, with 20 SKUs and 365 days each.
 
-Implemented: six validated CSV contracts, deterministic synthetic data, atomic SQLite imports, quality summaries, chronological RF/baseline evaluation, recursive forecasts, replacement costs, capped price suggestions, stock projections, replenishment quantities, immutable scenarios, persistent recommendations, safe exports, FastAPI, CLI, and a five-section Streamlit/Plotly dashboard with local review history. `ARCHITECTURE.md` remains the full-product specification.
+Open a saved analysis, see which products need attention, understand a recommendation, explore a what-if scenario, and download the results. The five pages are **Overview**, **Products**, **What-if Scenarios**, **Model Performance**, and **Data & Settings**. Select **Explore demo** to reuse a compatible synthetic base analysis without choosing technical IDs or retraining.
+
+Implemented: six validated CSV contracts, deterministic synthetic data, atomic SQLite imports, chronological Random Forest/baseline evaluation, forecasts, replacement costs, price suggestions, inventory planning, immutable scenarios, exports, and local review history. [User guide](docs/USER_GUIDE.md) explains the normal workflow. [Refinement evidence](docs/REFINEMENT_REPORT.md) records changes, API timings, checks, and the visual review checklist. `ARCHITECTURE.md` remains the technical specification. Existing `restockiq` CLI, environment-variable names, and storage paths remain compatible.
 
 ## Setup (Windows PowerShell)
 
@@ -14,7 +16,6 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --no-build-isolation --no-deps -e .
 Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m app.cli init-db
-.\.venv\Scripts\python.exe -m app.cli generate-demo --import
 .\.venv\Scripts\python.exe -m app.cli serve
 ```
 
@@ -49,21 +50,44 @@ Set-Location 'C:\Users\J A\Desktop\MarginShift'
 .\.venv\Scripts\python.exe -m app.cli ui --port 8501 --api-url http://127.0.0.1:8000
 ```
 
-Open [RestockIQ](http://127.0.0.1:8501), [API health](http://127.0.0.1:8000/api/v1/health), or [API documentation](http://127.0.0.1:8000/docs). Stop each terminal with Ctrl+C. If port 8000 is occupied, stop your previous API or use `serve --port 8001` and `ui --api-url http://127.0.0.1:8001`. Do not use multiple workers against one database. No public hosting is configured.
+Open [MarginShift](http://127.0.0.1:8501). [API health](http://127.0.0.1:8000/api/v1/health) and [API documentation](http://127.0.0.1:8000/docs) are also available. Stop each terminal with Ctrl+C. If 8000 is occupied, use `serve --port 8001` and `ui --api-url http://127.0.0.1:8001`. Run one API process against a database.
 
-Without prepared data, select **Data & Settings**. Generate a new synthetic dataset or upload all six CSVs, inspect quality, explicitly train, wait for completion, generate a forecast at the snapshot origin, then generate base recommendations. Dependent steps stay disabled until their prerequisites exist. Job polling runs every two seconds only while the tracked job is active; failed jobs require explicit resubmission.
+### Explore a demo
 
-The five pages are **Overview**, **Products**, **Scenarios**, **Model Performance**, and **Data & Settings**. Choose a dataset in the sidebar; **Advanced analysis selection** contains completed model, forecast, and exact saved analysis selectors. Dataset/model/forecast changes clear dependent selections. A compact context caption shows provenance, analysis date, horizon, and scenario name. Full IDs, saved settings, and assumptions are in **Technical details · selected analysis**. Editable drafts apply only to a new run. Scenarios can reuse saved assumptions or submit a named hypothetical scenario, preserving the chosen base pricing settings. **FX +10% / lead +7** leaves product target margins unchanged; **Phase 3 demonstration** additionally sets a 20% margin override.
+Select **Explore demo** in the sidebar. MarginShift finds a compatible saved synthetic base analysis and resolves its data, model, and forecast automatically. Opening or revisiting the dashboard never trains or calculates results implicitly. Synthetic provenance and the actual forecast dates remain visible.
 
-The redesign uses a light slate/white theme, restrained teal accents, system fonts, native keyboard-accessible controls, numeric sortable columns, and a shared Plotly theme. Overview puts urgent saved explanations before searchable inventory decisions. Products groups demand, costs, and recommendation details into tabs. Scenarios places assumptions alongside saved comparisons with percentage-point margin differences and explicit unapplied-form notices. Model Performance separates validation from held-out test results. Data & Settings presents a five-step setup workflow with collapsed advanced controls. The sidebar stays light to preserve native control contrast in Streamlit 1.45.1. See [redesign report and manual review checklist](docs/UI_REDESIGN.md); visual browser inspection remains a manual handoff.
+If a complete demo is missing, Explore demo opens **Data & Settings**. Explicitly generate a synthetic dataset if needed, review validation, train and evaluate, then **Generate analysis**. Completed steps are reused. Alternatively, the optional `prepare-demo` command above prepares missing demo prerequisites once using the existing local worker; do not run it concurrently with another heavy job.
 
-The Overview cash card includes only saved `order_required=true` products with available cash. It reports excluded counts, marks partial totals, and displays unavailable when no eligible values exist. Table order is expedite, order-now, earliest shortage, then SKU. Coverage quantities are candidates; no suggested orders are inserted into stock projections. Review/dismiss actions append a local audit record and have no effect on calculations.
+### Use your own data
 
-Downloads are fetched from the API using the visible run IDs. Immutable GET results are cached by API address and full path; discovery, job status, and audit history are uncached. Mutations never auto-retry. After a timeout, refresh discovery to check whether the operation committed before resubmitting. An action request UUID makes a retried identical local review idempotent; reusing it with changed content returns 409.
+1. Open **Data & Settings**, choose **Load data**, then **Upload CSV files**. Download six blank templates if needed. They demonstrate file structure and contain no usable business history.
+2. Submit all six CSV files together. Invalid batches import nothing. Errors show file, row, field, explanation, and a suggested correction.
+3. Review validation, then **Continue to model preparation**. **Train and evaluate** starts an explicit tracked job. Status updates every two seconds while that job is active; no estimated completion percentage is invented. Training buttons stay disabled during the tracked job.
+4. **Generate analysis** reuses a matching forecast or saves one, then saves pricing and inventory decisions. If saving decisions fails, the completed forecast is kept for retry. Advanced rounding and price-cap settings affect only a new saved analysis.
+5. **Open Overview**, inspect priority actions, open product details, explore scenarios, and use **Download selected reports → Prepare download**. Only the chosen report is fetched.
 
-Presentation handoff: [demo script](docs/DEMO_SCRIPT.md), [six-slide outline](docs/PRESENTATION_OUTLINE.md), [limitations](docs/LIMITATIONS.md), and [Phase 4 verification report](PHASE4_REPORT.md).
+### Saved results and advanced access
 
-Additional API reads: `GET /datasets`, `/models?dataset_id=…`, `/forecasts?dataset_id=…&model_id=…`, `/recommendations?dataset_id=…&forecast_run_id=…`, `/scenarios?dataset_id=…&forecast_run_id=…`, `/datasets/{id}/products/{sku}/sales?through=YYYY-MM-DD`, `/data-contracts`, `/recommendations/{id}/overview`, and forecast/recommendation `/{id}/metadata`. Review history uses GET/POST `/recommendations/{id}/actions` with `request_id`, `sku`, `action` (`reviewed` or `rejected`), and optional `note`.
+The readable **Saved analysis** selector distinguishes base analyses from named hypothetical scenarios. It resolves compatible dependencies together. **Advanced analysis details** lets you change datasets or switch on **Choose model and forecast** to prepare a new analysis. Dataset changes clear dependent selections and drafts; old results are never displayed under the new dataset. **Technical details · selected analysis** contains full saved IDs, effective settings, and provenance. All exact compatible saved runs remain selectable; the saved ordinal distinguishes otherwise identical labels.
+
+Product views load demand charts, pricing, or recommendation details on demand. Review controls and fresh local audit history appear when requested. Local reviews do not place orders or publish prices. In **What-if Scenarios**, presets for FX, delivery, or both leave product target margins unchanged. The margin override requires an explicit checkbox. Reset affects the draft; saved scenarios remain. An identical successful form submission reuses its result within the same UI session. API writes themselves are not automatically retried or generally idempotent.
+
+Overview cash includes only products flagged `order_required=true` with available cash, preserving partial/excluded counts. Coverage candidates and requests to expedite existing deliveries remain distinct. Stock curves exclude newly suggested orders. Missing values are unavailable, not zero; a missing shortage date is limited to the supplied horizon.
+
+Immutable reads are cached by API address and full path (including dataset/run/product/date inputs). Discovery, job status, and requested action history stay fresh. Metadata reads avoid loading forecast rows or all product results. No model artifact loads during dashboard navigation. Existing data, saved analyses, financial formulas, and forecast/evaluation semantics are preserved.
+
+### Troubleshooting
+
+- **Cannot connect:** start the backend or update **Connection settings**, then **Reconnect / refresh**. The selected saved context survives a temporary outage. Changing API address clears dependent selections; cached results cannot cross API addresses.
+- **No saved analysis:** choose the appropriate dataset in Advanced analysis details, then follow Data & Settings. A completed model and forecast can be reused.
+- **Failed training/generation:** review the displayed job error and retry the failed step explicitly. Completed data is kept. Restarted interrupted jobs become failed with recovery guidance. Training may take time.
+- **Timeout after a write:** refresh discovery and check for the saved job/result before resubmitting; a timeout does not prove that nothing was committed. A saved scenario has a separate calculation retry action.
+- **Missing costs:** add eligible supplier quotes or FX observations to a new six-file dataset, then create a new analysis. Historical purchase cost is not substituted.
+- **Forecast too short:** use a longer outlook up to 30 days or revise supplier/review inputs in a new data batch. Unavailable quantities/cash stay explicit.
+
+No new configuration or dependencies are needed. Additional read routes are `GET /api/v1/analyses`, `/recommendations/{id}/workspace`, `/recommendations/{id}/catalog`, `/forecasts/{id}/products/{sku}`, and `/data-contracts/templates` (ZIP). Existing routes remain compatible. Forecast/recommendation `/metadata` now reads headers without materializing all rows/products; `/overview` projects only summary inputs. Full export/detail routes retain exact saved precision.
+
+Historical implementation reports: [Phase 4](PHASE4_REPORT.md), [previous UI redesign](docs/UI_REDESIGN.md). The [current demo script](docs/DEMO_SCRIPT.md) follows the simplified workflow.
 
 ## CLI reference
 

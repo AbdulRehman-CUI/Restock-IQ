@@ -21,6 +21,9 @@ def render(client, context):
         with st.expander("Model status details"):
             st.json({"error": model.get("error"), "details": details})
         return
+    if not all(key in details for key in ('selection', 'partitions', 'validation', 'test')):
+        st.info('This saved model has no complete evaluation report. Prepare and evaluate a new model in Data & Settings to inspect validation and test evidence. Existing analyses remain saved.')
+        return
     selection = details['selection']
     with st.container(border=True):
         method, basis = st.columns([1, 3])
@@ -37,6 +40,9 @@ def render(client, context):
     result = details[partition][str(horizon)]
     scores = result['methods']
     base, forest = scores['baseline'], scores['random_forest']
+    selected = scores[model['selected_method']]
+    st.write(f"Selected method: {METHODS[model['selected_method']]}. Compared with the recent-demand baseline, its {partition} MAE is {score_value(selected['mae_units'])} units per product-day (baseline: {score_value(base['mae_units'])}).")
+    st.caption('MAE shows how many units the forecast missed by, on average. WAPE compares total absolute prediction error with total observed demand. Lower is better.')
     dates = details['partitions'][partition]
     st.caption(f"{partition.title()} dates: {day(dates['start'])} – {day(dates['end'])} · {horizon}-day recursive forecasts")
     cards = st.columns(4)

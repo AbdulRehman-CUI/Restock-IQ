@@ -25,7 +25,7 @@ class JobWorker:
         with self.db.transaction() as session:
             for job in session.scalars(select(Job).where(Job.status.in_(["queued", "running"]))):
                 job.status, job.stage, job.active_key = "failed", "interrupted", None
-                job.error = "Application stopped before completion. Submit the demo request again to retry."
+                job.error = "Application stopped before completion. Review saved steps, then retry the interrupted generation or training step."
                 job.updated_at = utc_now()
             for model in session.scalars(select(ModelRun).where(ModelRun.status == "running")):
                 model.status = "failed"

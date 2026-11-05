@@ -8,6 +8,10 @@ from app.services import dashboard
 from app.services.recommendations import get_recommendations
 from app.services.forecasting import get_forecast
 from app.data.contracts import CONTRACTS
+from fastapi.responses import Response
+import csv
+import io
+import zipfile
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -34,6 +38,11 @@ class DiscoveryItem(BaseModel):
 @router.get("/datasets", response_model=list[DiscoveryItem], response_model_exclude_none=True)
 def datasets(request: Request):
     return dashboard.discover(request.app.state.db, "datasets")
+
+
+@router.get("/analyses", response_model=list[DiscoveryItem], response_model_exclude_none=True)
+def analyses(request: Request):
+    return dashboard.analyses(request.app.state.db)
 
 
 @router.get("/models", response_model=list[DiscoveryItem], response_model_exclude_none=True)
@@ -95,7 +104,22 @@ class Overview(BaseModel):
 
 @router.get("/recommendations/{run_id}/overview", response_model=Overview)
 def overview(run_id: UUID, request: Request):
-    return dashboard.overview(get_recommendations(request.app.state.db, run_id)["products"])
+    return dashboard.overview_for_run(request.app.state.db, run_id)
+
+
+@router.get("/recommendations/{run_id}/workspace")
+def workspace(run_id: UUID, request: Request):
+    return dashboard.workspace(request.app.state.db, run_id)
+
+
+@router.get("/recommendations/{run_id}/catalog")
+def product_catalog(run_id: UUID, request: Request):
+    return dashboard.product_catalog(request.app.state.db, run_id)
+
+
+@router.get("/forecasts/{run_id}/products/{sku:path}")
+def product_forecast(run_id: UUID, sku: str, request: Request):
+    return get_forecast(request.app.state.db, run_id, sku=sku)
 
 
 class ActionRequest(BaseModel):
@@ -123,12 +147,12 @@ def actions(run_id: UUID, request: Request):
 
 @router.get("/forecasts/{run_id}/metadata", response_model=dict[str, Any])
 def forecast_metadata(run_id: UUID, request: Request):
-    return {k: v for k, v in get_forecast(request.app.state.db, run_id).items() if k != "rows"}
+    return get_forecast(request.app.state.db, run_id, include_rows=False)
 
 
 @router.get("/recommendations/{run_id}/metadata", response_model=dict[str, Any])
 def recommendation_metadata(run_id: UUID, request: Request):
-    return {k: v for k, v in get_recommendations(request.app.state.db, run_id).items() if k != "products"}
+    return get_recommendations(request.app.state.db, run_id, include_products=False)
 
 
 class CSVContract(BaseModel):
@@ -141,3 +165,19 @@ def contracts():
     return {name: {"required_fields": [name for name, field in contract.model_fields.items() if field.is_required()],
                    "optional_fields": [name for name, field in contract.model_fields.items() if not field.is_required()]}
             for name, contract in CONTRACTS.items()}
+
+
+@router.get('/data-contracts/templates')
+def templates():
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('README.txt', 'Blank examples of CSV structure, not usable business history.\n'
+            'Fill all six files with your own records. Sales need a complete calendar per SKU; inventory uses the final sales date.\n'
+            'Use ISO dates, timezone-aware quote timestamps, true/false flags, money with at most two decimals and margin fractions (0.20 = 20%).\n'
+            'Empty quotes/orders/rates files still require headers. See the in-app field contract for required and optional columns.\n')
+        for name, contract in CONTRACTS.items():
+            header = io.StringIO(newline='')
+            csv.writer(header, lineterminator='\n').writerow(contract.model_fields)
+            archive.writestr(name, header.getvalue())
+    return Response(output.getvalue(), media_type='application/zip',
+        headers={'Content-Disposition': 'attachment; filename="marginshift-csv-templates.zip"'})

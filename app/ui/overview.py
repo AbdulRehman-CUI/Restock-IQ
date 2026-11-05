@@ -14,7 +14,8 @@ def render(client, context):
     if not require_run(context):
         return
     run = context["recommendation"]
-    summary = saved_get(client.base_url, f"recommendations/{run['recommendation_run_id']}/overview")
+    workspace = saved_get(client.base_url, f"recommendations/{run['recommendation_run_id']}/workspace")
+    summary = workspace['summary']
     cash = summary["order_now_cash"]
     cards = st.columns(4)
     metric(cards[0], "Order now", summary["order_now_products"], "Products flagged for an immediate order")
@@ -23,17 +24,21 @@ def render(client, context):
     metric(cards[3], "Order-now replenishment cash", compact_money(cash["value"]),
            f"{'Partial · ' if cash['partial'] else ''}{amount(cash['value'])} · {cash['included_products']} included / {cash['excluded_products']} excluded")
     st.subheader("Priority actions")
-    products = sorted(run["products"], key=lambda p: (not p["inventory"]["expedite_required"],
+    products = sorted(workspace["products"], key=lambda p: (not p["inventory"]["expedite_required"],
         not p["inventory"]["order_required"], p["inventory"]["first_shortage_date"] or "9999", p["sku"]))
     urgent = [p for p in products if p["inventory"]["supply_action_required"] or
-              "TARGET_MARGIN_UNMET" in p["reason_codes"] or p["costs"]["status"] == "unavailable"][:4]
+              (p['pricing']['current_replacement_margin'] is not None and
+               number(p['pricing']['current_replacement_margin']) < number(p['pricing']['target_margin'])) or
+              p["costs"]["status"] == "unavailable"]
+    st.caption(f'{len(urgent)} products need review · showing the first five in priority order.')
     if not urgent:
         st.info("No immediate actions in the selected results. Review the supported forecast window and data availability below.")
-    for p in urgent:
-        with st.container(border=True):
+    for p in urgent[:5]:
+        with st.container(border=True, key="ms-priority-" + p["sku"]):
             name, reason, action = st.columns([2, 4, 1])
             name.write(p["name"])
-            name.caption(f"{p['sku']} · {status(p)}")
+            issue = status(p) if p['inventory']['supply_action_required'] else 'Cost inputs missing' if p['costs']['status'] == 'unavailable' else 'Below target margin'
+            name.caption(f"{p['sku']} · {issue}")
             # Display persisted explanations, never new business recommendations.
             explanations = p["explanations"]
             prefix = ("Demand is expected" if p['inventory']['expedite_required'] else
@@ -41,6 +46,11 @@ def render(client, context):
                       "Replacement cost" if p['costs']['status'] == 'unavailable' else "Price PKR")
             relevant = next((s for s in explanations if s.startswith(prefix)), explanations[0])
             reason.caption(relevant)
+            inv = p['inventory']
+            reason.write(('Expedite an existing delivery' if inv['expedite_existing_po_ids'] and inv['order_quantity'] == 0 else
+                          'Arrange faster supply' if inv['expedite_required'] else 'Review an order now' if inv['order_required'] else
+                          'Supply a current quote / FX rate' if p['costs']['status'] == 'unavailable' else 'Review the suggested price'))
+            reason.caption(f"Estimated shortage: {inv['first_shortage_date'] or 'No date in this forecast'} · Coverage candidate: {inv['order_quantity'] if inv['order_quantity'] is not None else 'Unavailable'} units")
             action.button("View details", key="priority_" + p["sku"], on_click=open_product, args=(p["sku"],))
     st.subheader("Inventory decisions")
     filters = st.columns([2, 1, 1])

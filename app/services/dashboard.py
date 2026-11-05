@@ -7,6 +7,59 @@ from app.db.models import (Dataset, ModelRun, ForecastRun, RecommendationRun, Sc
 from app.services.ingestion import utc_now
 
 
+def analyses(db):
+    """Resolve saved dependencies in one query, excluding incompatible references."""
+    r, f, m, d, s = RecommendationRun, ForecastRun, ModelRun, Dataset, Scenario
+    query = select(r.id, r.dataset_id, r.model_id, r.forecast_run_id, r.scenario_id,
+        r.origin, r.horizon_days, r.created_at, d.provenance, s.name).join(f,
+        (r.forecast_run_id == f.id) & (r.dataset_id == f.dataset_id) & (r.model_id == f.model_id) &
+        (r.origin == f.origin) & (r.horizon_days == f.horizon_days)).join(m,
+        (r.model_id == m.id) & (r.dataset_id == m.dataset_id)).join(d, r.dataset_id == d.id).outerjoin(s, r.scenario_id == s.id).where(
+        m.status == 'completed', m.training_cutoff <= r.origin,
+        (r.scenario_id.is_(None)) | ((s.dataset_id == r.dataset_id) & (s.forecast_run_id == r.forecast_run_id)))
+    with db.sessions() as session:
+        return [dict(row) for row in session.execute(query.order_by(r.created_at.desc(), r.id.desc())).mappings()]
+
+
+def product_catalog(db, run_id):
+    with db.sessions() as session:
+        if session.get(RecommendationRun, str(run_id)) is None:
+            raise NotFound("Recommendation run not found")
+        result = RecommendationProduct.result
+        return [dict(row) for row in session.execute(select(RecommendationProduct.sku,
+            result['name'].as_string().label('name')).where(RecommendationProduct.run_id == str(run_id))
+            .order_by(RecommendationProduct.sku)).mappings()]
+
+
+def overview_for_run(db, run_id):
+    # Project only summary inputs; daily stock curves dominate the saved JSON.
+    with db.sessions() as session:
+        if session.get(RecommendationRun, str(run_id)) is None:
+            raise NotFound("Recommendation run not found")
+        result = RecommendationProduct.result
+        fields = {**{key: result['inventory'][key] for key in ('order_required', 'expedite_required',
+            'estimated_replenishment_cash_pkr', 'first_shortage_date', 'uncertain_overdue_units')},
+            **{key: result['pricing'][key] for key in ('current_replacement_margin', 'target_margin')}}
+        rows = session.execute(select(*(value.label(key) for key, value in fields.items())).where(
+            RecommendationProduct.run_id == str(run_id))).mappings()
+        products = [{'inventory': dict(row), 'pricing': dict(row)} for row in rows]
+    return overview(products)
+
+
+def workspace(db, run_id):
+    """Compact decision table without per-product daily curves or input records."""
+    from app.services.recommendations import get_recommendations
+    run = get_recommendations(db, run_id)
+    fields = {'sku', 'name', 'costs', 'pricing', 'inventory', 'reason_codes', 'explanations'}
+    products = []
+    for p in run['products']:
+        compact = {key: value for key, value in p.items() if key in fields}
+        compact['inputs'] = {'category': p['inputs']['category']}
+        compact['inventory'] = {key: value for key, value in p['inventory'].items() if key != 'daily'}
+        products.append(compact)
+    return {'summary': overview(products), 'products': products}
+
+
 CATALOG = {
     "datasets": (Dataset, ("id", "provenance", "start_date", "end_date")),
     "models": (ModelRun, ("id", "dataset_id", "status", "role", "training_cutoff", "selected_method", "created_at")),

@@ -11,28 +11,41 @@ def render(client, context):
     if not require_run(context):
         return
     run = context["recommendation"]
-    products = {p["sku"]: p for p in run["products"]}
+    products = {p['sku']: p for p in saved_get(client.base_url, f"recommendations/{run['recommendation_run_id']}/catalog")}
     if not products:
         st.info("This analysis has no product results. Select another saved analysis.")
         return
     if st.session_state.get("product") not in products:
         st.session_state.pop("product", None)
     sku = st.selectbox("Search by product name or SKU", list(products), key="product", format_func=lambda s: f"{products[s]['name']} · {s}")
-    p = products[sku]
+    p = saved_get(client.base_url, f"recommendations/{run['recommendation_run_id']}/products/{quote(sku, safe='')}")['product']
     inv, price, cost = p["inventory"], p["pricing"], p["costs"]
     st.subheader(p["name"])
     st.caption(f"{sku} · {p['inputs']['category']} · Supplier currency: {cost['currency'] or 'Unavailable'}")
     badge(status(p), "critical" if inv["expedite_required"] else "warning" if inv["order_required"] else "")
+    if inv['expedite_required']:
+        st.write(next(s for s in p['explanations'] if s.startswith('Demand is expected')))
+    elif inv['order_required']:
+        st.write(f"Review an order now. Saved coverage quantity: {units(inv['order_quantity'])} units; estimated landed cash: {amount(inv['estimated_replenishment_cash_pkr'])}.")
+    else:
+        st.write(f"{status(p)}. Review the suggested price and the supported planning window below.")
+    if cost['status'] == 'unavailable':
+        st.info('A supplier quote or required FX rate is missing. Replacement cost, pricing and order cash are affected. Add eligible inputs to a new six-file batch in Data & Settings, then create a new analysis.')
+    if inv['status'] == 'unavailable':
+        st.info('No usable demand forecast was saved. Stock projection and replenishment decisions are unavailable. Provide enough open, fully stocked sales history, then prepare a new model and analysis.')
+    elif inv['quantity_status'] == 'horizon_insufficient':
+        st.info('The forecast does not cover enough days for supplier delivery plus the review period. Coverage quantity and cash are unavailable. Use a longer forecast (up to 30 days), or revise delivery/review settings in a new data batch.')
     cards = st.columns(4)
     metric(cards[0], "Available stock", units(inv["available_units"]), f"Units at {day(run['origin'])}")
     metric(cards[1], "Replacement cost", amount(cost["replacement_cost_pkr"]), cost["status"].capitalize() + " · per unit")
     metric(cards[2], "Current price", amount(price["current_price_pkr"]), "Tax-exclusive · per unit")
     metric(cards[3], "Suggested price", amount(price["suggested_price_pkr"]), "Saved pricing rules · per unit")
-    demand, pricing, details = st.tabs(["Demand & Stock", "Pricing & Costs", "Recommendation Details"])
-    with demand:
-        st.caption(f"Method: {(p['forecast'].get('method') or 'unavailable').replace('_', ' ')} · Fallback: {p['forecast'].get('fallback_applied')} · Observations: {p['forecast'].get('observation_count')}")
+    section = st.radio('Product view', ['Demand & Stock', 'Pricing & Costs', 'Recommendation Details'], horizontal=True)
+    if section == 'Demand & Stock':
+        fallback = ' · Recent-demand fallback used' if p['forecast'].get('fallback_applied') else ''
+        st.caption(f"Demand method: {(p['forecast'].get('method') or 'unavailable').replace('_', ' ').title()} · Baseline reference: {p['forecast'].get('observation_count')} recent observations{fallback}")
         history = saved_get(client.base_url, f"datasets/{run['dataset_id']}/products/{quote(sku, safe='')}/sales?through={run['origin']}")["rows"]
-        future = [r for r in context["forecast_data"]["rows"] if r["sku"] == sku]
+        future = saved_get(client.base_url, f"forecasts/{run['forecast_run_id']}/products/{quote(sku, safe='')}")['rows']
         fig = go.Figure()
         line(fig, [r["date"] for r in history], [r["units_sold"] for r in history], "Observed sales", COLORS["blue"])
         line(fig, [r["date"] for r in future], [r["expected_units"] for r in future], "Forecast demand", dash="dash")
@@ -40,7 +53,7 @@ def render(client, context):
             flagged = [r for r in history if predicate(r)]
             fig.add_trace(go.Scatter(x=[r["date"] for r in flagged], y=[r["units_sold"] for r in flagged], mode="markers", name=label, marker=dict(color=color, symbol="x", size=6)))
         fig.add_shape(type="line", x0=run["origin"], x1=run["origin"], y0=0, y1=1, yref="paper", line=dict(color=COLORS["muted"], dash="dot"))
-        fig.add_annotation(x=run["origin"], y=1.08, yref="paper", text="Forecast origin", showarrow=False, xanchor="right")
+        fig.add_annotation(x=run["origin"], y=1.08, yref="paper", text="Analysis date", showarrow=False, xanchor="right")
         chart(fig, "Observed sales & forecast demand", "Units per day", height=390)
         if not future:
             st.info("Forecast demand is unavailable for this product. Observed sales remain visible.")
@@ -49,7 +62,7 @@ def render(client, context):
         if daily:
             fig = go.Figure()
             line(fig, [r["date"] for r in daily], [r["closing_units"] for r in daily], "Closing stock")
-            fig.add_bar(x=[r["date"] for r in daily], y=[r["receipt_units"] for r in daily], name="Scheduled receipts", marker_color=COLORS["blue"], opacity=.65)
+            fig.add_bar(x=[r["date"] for r in daily], y=[r["receipt_units"] for r in daily], name="Scheduled receipts", marker_color=COLORS["cyan"], opacity=.65)
             line(fig, [r["date"] for r in daily], [r["expected_unmet_units"] for r in daily], "Unmet demand", COLORS["critical"])
             chart(fig, "Inventory projection", "Units")
         else:
@@ -60,7 +73,7 @@ def render(client, context):
                {"Measure": "Scheduled incoming units", "Saved result": units(inv['scheduled_incoming_units'])},
                {"Measure": "Uncertain overdue units", "Saved result": units(inv['uncertain_overdue_units'])}])
         st.caption("Missing dates are limited to the supplied forecast window. They do not establish that a later shortage cannot occur.")
-    with pricing:
+    elif section == 'Pricing & Costs':
         left, right = st.columns(2)
         with left:
             st.subheader("Price & margin")
@@ -84,7 +97,7 @@ def render(client, context):
         if cost["warnings"]:
             st.warning("Cost input flags: " + ", ".join(w.replace("_", " ").capitalize() for w in cost["warnings"]))
         st.caption("Freshness is assessed at the analysis date. An indicative cost may use stale or expired inputs; unavailable cost is never replaced with historical purchase cost. PKR uses an identity FX rate without a dated FX observation.")
-    with details:
+    else:
         st.subheader("Why this recommendation")
         for explanation in p["explanations"]:
             st.write(explanation)
@@ -94,7 +107,7 @@ def render(client, context):
             "Estimated reorder decision date": day(inv['timing'].get('decision_date')),
             "Last evaluated decision date": day(inv['timing'].get('last_evaluated_decision_date')),
             "Coverage quantity": units(inv['order_quantity']), "Quantity status": inv['quantity_status'].replace('_', ' '),
-            "Order now": "Yes" if inv['order_required'] else "No", "Lead time (days)": p['lead_time']['effective_lead_days'],
+            "Order now": "Yes" if inv['order_required'] else "No", "Estimated supplier delivery time (days)": p['lead_time']['effective_lead_days'],
             "Lead-time source": p['lead_time']['method'].replace('_', ' '),
             "MOQ": p['inputs']['moq'], "Pack size": p['inputs']['pack_size'],
             "Uncertain overdue supply (units)": units(inv['uncertain_overdue_units'])}.items()])
@@ -105,6 +118,8 @@ def render(client, context):
         with st.expander("Technical provenance & calculation inputs"):
             st.json(p)
     with st.expander("Local review actions & history"):
+        show_review = st.checkbox('Show local review controls', key='action_show_review')
+    if show_review:
         st.caption("Records a local review only. Orders, published prices and inventory are unaffected.")
         token_key = f"action_token_{run['recommendation_run_id']}_{sku}"
         st.session_state.setdefault(token_key, str(uuid4()))

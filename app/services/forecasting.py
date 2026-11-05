@@ -49,7 +49,7 @@ def create_forecast(db, settings, dataset_id, model_id, origin: date, horizon_da
     return get_forecast(db, run_id)
 
 
-def get_forecast(db, run_id):
+def get_forecast(db, run_id, *, include_rows=True, sku=None):
     with db.sessions() as session:
         run = session.get(ForecastRun, str(run_id))
         if run is None:
@@ -57,12 +57,23 @@ def get_forecast(db, run_id):
         result = {"forecast_run_id": run.id, "dataset_id": run.dataset_id, "model_id": run.model_id,
                   "origin": run.origin.isoformat(), "horizon_days": run.horizon_days,
                   "created_at": run.created_at, **run.details}
-        rows = session.scalars(select(ForecastRow).where(ForecastRow.run_id == run.id).order_by(ForecastRow.sku, ForecastRow.date))
+        if not include_rows:
+            return result
+        query = select(ForecastRow).where(ForecastRow.run_id == run.id)
+        if sku is not None:
+            if not any(p['sku'] == sku for p in run.details['product_status']):
+                raise NotFound("Product not found in forecast")
+            query = query.where(ForecastRow.sku == sku)
+        rows = session.scalars(query.order_by(ForecastRow.sku, ForecastRow.date))
         result["rows"] = [{"sku": r.sku, "date": r.date.isoformat(), "expected_units": r.expected_units,
                            "method": r.method, "fallback_applied": r.fallback_applied,
                            "observation_count": r.observation_count, "reason_codes": r.reason_codes,
                            "origin": result["origin"], "horizon_days": run.horizon_days,
                            "model_id": run.model_id, "dataset_id": run.dataset_id} for r in rows]
+        if sku is not None:
+            result['product_status'] = [p for p in run.details['product_status'] if p['sku'] == sku]
+            result['row_count'] = len(result['rows'])
+            result['forecasted_products'] = sum(p['status'] == 'forecasted' for p in result['product_status'])
         return result
 
 

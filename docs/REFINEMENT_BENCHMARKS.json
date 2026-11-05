@@ -1,0 +1,224 @@
+{
+  "date": "2026-11-02",
+  "original_commit": "fa7dc402ef28ffaaab69ceb7ce4edfbeaaba1273",
+  "saved_source_files_verified": 73,
+  "source_hashes_equal_across_runs": true,
+  "measurements": {
+    "matched-before": {
+      "conditions": "TestClient on copied saved database; first timed request after discovery + median of nine repeats (ms). SQLite warmed by discovery. AppTest cold/warm data cache; no browser measurement.",
+      "base_products_sha256": "331c0a4c748c27a7ac8e05424baf4130b04661b024bc20a56378927a4bd790bb",
+      "dataset_id": "229e8694-5e15-4809-b7c9-a59e21c26dad",
+      "run_id": "2e5a0160-26f1-41c7-8129-70fd11e2ec38",
+      "overview": {
+        "cold_ms": 8.379,
+        "warm_median_ms": 16.414,
+        "bytes": 323
+      },
+      "product": {
+        "cold_ms": 14.17,
+        "warm_median_ms": 12.974,
+        "bytes": 10871
+      },
+      "scenario_calculation": {
+        "cold_ms": 132.163,
+        "warm_median_ms": 219.107,
+        "bytes": 224162
+      },
+      "scenario_products_sha256": "b587fca68a23ff639b95b86d591b13e1eadab0cb22f0ef22af242fa1e60e2ede",
+      "overview_cold_calls": [
+        "GET datasets",
+        "GET models",
+        "GET forecasts",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2",
+        "GET recommendations",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/overview",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2/export",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2/metadata",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/export",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/metadata"
+      ],
+      "overview_cold_bytes": 545725,
+      "overview_warm_calls": [
+        "GET datasets",
+        "GET models",
+        "GET forecasts",
+        "GET recommendations"
+      ],
+      "overview_warm_bytes": 5136,
+      "product_navigation_calls": [
+        "GET datasets",
+        "GET models",
+        "GET forecasts",
+        "GET recommendations",
+        "GET datasets/229e8694-5e15-4809-b7c9-a59e21c26dad/products/CBL-002/sales?through=2026-10-15",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/actions"
+      ],
+      "model_navigation_calls": [
+        "GET datasets",
+        "GET models",
+        "GET forecasts",
+        "GET recommendations",
+        "GET models/3aac863c-2f6c-4bfa-bcc1-21c0f1cb0f0f/metrics"
+      ],
+      "source_files_unchanged": true
+    },
+    "matched-after": {
+      "conditions": "TestClient on copied saved database; first timed request after discovery + median of nine repeats (ms). SQLite warmed by discovery. AppTest cold/warm data cache; no browser measurement.",
+      "base_products_sha256": "331c0a4c748c27a7ac8e05424baf4130b04661b024bc20a56378927a4bd790bb",
+      "dataset_id": "229e8694-5e15-4809-b7c9-a59e21c26dad",
+      "run_id": "2e5a0160-26f1-41c7-8129-70fd11e2ec38",
+      "overview": {
+        "cold_ms": 5.857,
+        "warm_median_ms": 3.63,
+        "bytes": 323
+      },
+      "product": {
+        "cold_ms": 3.222,
+        "warm_median_ms": 2.332,
+        "bytes": 10871
+      },
+      "scenario_calculation": {
+        "cold_ms": 76.699,
+        "warm_median_ms": 84.182,
+        "bytes": 224162
+      },
+      "scenario_products_sha256": "b587fca68a23ff639b95b86d591b13e1eadab0cb22f0ef22af242fa1e60e2ede",
+      "overview_cold_calls": [
+        "GET datasets",
+        "GET analyses",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/metadata",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2/metadata",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/workspace"
+      ],
+      "overview_cold_bytes": 84384,
+      "overview_warm_calls": [
+        "GET datasets",
+        "GET analyses"
+      ],
+      "overview_warm_bytes": 7627,
+      "product_navigation_calls": [
+        "GET datasets",
+        "GET analyses",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/catalog",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/products/CBL-002",
+        "GET datasets/229e8694-5e15-4809-b7c9-a59e21c26dad/products/CBL-002/sales?through=2026-10-15",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2/products/CBL-002"
+      ],
+      "model_navigation_calls": [
+        "GET datasets",
+        "GET analyses",
+        "GET models/3aac863c-2f6c-4bfa-bcc1-21c0f1cb0f0f/metrics"
+      ],
+      "source_files_unchanged": true
+    },
+    "matched-before-2": {
+      "conditions": "TestClient on copied saved database; first timed request after discovery + median of nine repeats (ms). SQLite warmed by discovery. AppTest cold/warm data cache; no browser measurement.",
+      "base_products_sha256": "331c0a4c748c27a7ac8e05424baf4130b04661b024bc20a56378927a4bd790bb",
+      "dataset_id": "229e8694-5e15-4809-b7c9-a59e21c26dad",
+      "run_id": "2e5a0160-26f1-41c7-8129-70fd11e2ec38",
+      "overview": {
+        "cold_ms": 18.546,
+        "warm_median_ms": 17.436,
+        "bytes": 323
+      },
+      "product": {
+        "cold_ms": 19.241,
+        "warm_median_ms": 16.874,
+        "bytes": 10871
+      },
+      "scenario_calculation": {
+        "cold_ms": 134.3,
+        "warm_median_ms": 216.213,
+        "bytes": 224162
+      },
+      "scenario_products_sha256": "b587fca68a23ff639b95b86d591b13e1eadab0cb22f0ef22af242fa1e60e2ede",
+      "overview_cold_calls": [
+        "GET datasets",
+        "GET models",
+        "GET forecasts",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2",
+        "GET recommendations",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/overview",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2/export",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2/metadata",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/export",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/metadata"
+      ],
+      "overview_cold_bytes": 545725,
+      "overview_warm_calls": [
+        "GET datasets",
+        "GET models",
+        "GET forecasts",
+        "GET recommendations"
+      ],
+      "overview_warm_bytes": 5136,
+      "product_navigation_calls": [
+        "GET datasets",
+        "GET models",
+        "GET forecasts",
+        "GET recommendations",
+        "GET datasets/229e8694-5e15-4809-b7c9-a59e21c26dad/products/CBL-002/sales?through=2026-10-15",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/actions"
+      ],
+      "model_navigation_calls": [
+        "GET datasets",
+        "GET models",
+        "GET forecasts",
+        "GET recommendations",
+        "GET models/3aac863c-2f6c-4bfa-bcc1-21c0f1cb0f0f/metrics"
+      ],
+      "source_files_unchanged": true
+    },
+    "matched-after-2": {
+      "conditions": "TestClient on copied saved database; first timed request after discovery + median of nine repeats (ms). SQLite warmed by discovery. AppTest cold/warm data cache; no browser measurement.",
+      "base_products_sha256": "331c0a4c748c27a7ac8e05424baf4130b04661b024bc20a56378927a4bd790bb",
+      "dataset_id": "229e8694-5e15-4809-b7c9-a59e21c26dad",
+      "run_id": "2e5a0160-26f1-41c7-8129-70fd11e2ec38",
+      "overview": {
+        "cold_ms": 8.147,
+        "warm_median_ms": 10.317,
+        "bytes": 323
+      },
+      "product": {
+        "cold_ms": 8.158,
+        "warm_median_ms": 6.487,
+        "bytes": 10871
+      },
+      "scenario_calculation": {
+        "cold_ms": 190.803,
+        "warm_median_ms": 272.944,
+        "bytes": 224162
+      },
+      "scenario_products_sha256": "b587fca68a23ff639b95b86d591b13e1eadab0cb22f0ef22af242fa1e60e2ede",
+      "overview_cold_calls": [
+        "GET datasets",
+        "GET analyses",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/metadata",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2/metadata",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/workspace"
+      ],
+      "overview_cold_bytes": 84384,
+      "overview_warm_calls": [
+        "GET datasets",
+        "GET analyses"
+      ],
+      "overview_warm_bytes": 7627,
+      "product_navigation_calls": [
+        "GET datasets",
+        "GET analyses",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/catalog",
+        "GET recommendations/2e5a0160-26f1-41c7-8129-70fd11e2ec38/products/CBL-002",
+        "GET datasets/229e8694-5e15-4809-b7c9-a59e21c26dad/products/CBL-002/sales?through=2026-10-15",
+        "GET forecasts/8b8866ad-a84b-4820-ae18-23ec6e3757a2/products/CBL-002"
+      ],
+      "model_navigation_calls": [
+        "GET datasets",
+        "GET analyses",
+        "GET models/3aac863c-2f6c-4bfa-bcc1-21c0f1cb0f0f/metrics"
+      ],
+      "source_files_unchanged": true
+    }
+  }
+}
