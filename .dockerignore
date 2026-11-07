@@ -1,0 +1,7 @@
+.git
+.venv
+.env*
+runtime
+data
+artifacts
+tests

@@ -17,4 +17,5 @@ def health(request: Request):
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
 def job(job_id: UUID, request: Request):
+    request.app.state.worker.recover_stale()
     return get_job(request.app.state.db, job_id)
