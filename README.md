@@ -1,4 +1,6 @@
-# MarginShift — Inventory and Pricing Decisions
+# RestockIQ / MarginShift — Inventory and Pricing Decisions
+
+**Hosted app:** https://restockiq-ar.vercel.app · [Deployment and sign-in guide](DEPLOYMENT.md). The hosted dashboard uses PostgreSQL persistence; the original local Streamlit workflow remains available below.
 
 An offline data foundation for a fictional Pakistani electronics-accessories retailer. **All generated business records, customer demand, supplier quotes, events, and FX rates are synthetic.** Business timezone: `Asia/Karachi`; reporting currency: `PKR`; prices are tax-exclusive. The default history is **2025-10-16 through 2026-10-15**, with 20 SKUs and 365 days each.
 
