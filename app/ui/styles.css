@@ -27,7 +27,8 @@
 /* Keep the native radio names, checked state, focus, and responsive wrapping. */
 .st-key-ms-navigation label {border-radius:8px;transition:background var(--ms-fast);padding:4px 8px;}
 .st-key-ms-navigation label:hover,.st-key-ms-navigation label:focus-within {background:var(--ms-subtle);}
-.rq-brand {font-size:1.5rem;font-weight:750;letter-spacing:-.05em;position:relative;display:inline-block;line-height:1.4;}
+.rq-brand {font-size:1.5rem;font-weight:750;letter-spacing:-.05em;position:relative;display:inline-flex;align-items:center;gap:.45rem;line-height:1.4;}
+.rq-brand img {width:32px;height:32px;border-radius:8px;object-fit:cover;}
 .rq-brand span {color:var(--ms-teal);}
 .rq-brand i {display:block;width:28px;height:3px;background:var(--ms-cyan);border-radius:3px;margin-top:3px;}
 .ms-brand-enter {animation:ms-brand-in var(--ms-brand-duration) ease-out both;}

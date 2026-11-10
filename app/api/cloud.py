@@ -51,7 +51,7 @@ async def cloud_access(request, call_next):
         if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
             return JSONResponse({"message": "Cross-origin requests are not allowed"}, 403)
     if request.url.path.startswith("/api/") and request.url.path not in (
-            "/api/v1/health", "/api/v1/session", "/api/v1/login"):
+            "/api/v1/health", "/api/v1/session", "/api/v1/login", "/api/v1/market/scheduled-refresh"):
         if not authenticated(request):
             return JSONResponse({"message": "Sign in to access this workspace"}, 401)
     response = await call_next(request)
