@@ -9,6 +9,11 @@ def money(value):
     return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def landed_cost(unit_price, rate, freight, other, allocated_fee=Decimal(0)):
+    """Shared exact landed-cost path; callers decide when display rounding occurs."""
+    return unit_price * rate + freight + other + allocated_fee
+
+
 def replacement_cost(product, quotes, rates, origin, settings, assumptions):
     eligible = [q for q in quotes if q.sku == product.sku and q.supplier_id == product.supplier_id
                 and q.observed_at.astimezone(ZoneInfo(TIMEZONE)).date() <= origin]
@@ -42,7 +47,7 @@ def replacement_cost(product, quotes, rates, origin, settings, assumptions):
     selected_rate = rate * (1 + assumptions.fx_change_pct / 100) if quote.currency != "PKR" else rate
     acquisition = selected_quote * selected_rate
     freight = quote.freight_unit_pkr + assumptions.additional_freight_pkr
-    unrounded = acquisition + freight + quote.other_unit_pkr
+    unrounded = landed_cost(selected_quote, selected_rate, freight, quote.other_unit_pkr)
     result.update(status="indicative" if result["warnings"] else "available",
         replacement_cost_pkr=money(unrounded), unrounded_replacement_cost_pkr=unrounded,
         components={"base_supplier_unit_price": quote.unit_price, "selected_supplier_unit_price": selected_quote,

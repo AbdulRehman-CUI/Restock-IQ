@@ -34,12 +34,21 @@ class Database:
     def initialize(self):
         # Serialize schema initialization across simultaneous cold starts.
         from sqlalchemy import text
+        from app.db.market import MARKET_TABLES, SchemaVersion
+        from app.db.migrations import upgrade
         with self.engine.begin() as connection:
             if self.engine.dialect.name == "postgresql":
                 connection.execute(text("SELECT pg_advisory_xact_lock(73190512)"))
-            Base.metadata.create_all(connection)
+            else:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
+            new_tables = {table.name for table in MARKET_TABLES} | {SchemaVersion.__tablename__}
+            Base.metadata.create_all(connection, tables=[table for table in Base.metadata.sorted_tables
+                                                        if table.name not in new_tables])
+            upgrade(connection)
 
     @contextmanager
     def transaction(self):
         with self.lock, self.sessions.begin() as session:
+            if self.engine.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN IMMEDIATE")
             yield session

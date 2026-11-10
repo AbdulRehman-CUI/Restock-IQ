@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+import base64
 from html import escape
 from pathlib import Path
 import pandas as pd
@@ -32,7 +33,13 @@ def first_entrance(key):
 
 def brand():
     entrance = " ms-brand-enter" if first_entrance('brand') else ""
-    st.markdown(f'<div class="rq-brand{entrance}">Margin<span>Shift</span><i aria-hidden="true"></i></div>', unsafe_allow_html=True)
+    logo_path = Path(__file__).parents[1] / "web" / "assets" / "site-logo.png"
+    logo = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+    st.markdown(
+        f'<div class="rq-brand{entrance}"><img src="data:image/png;base64,{logo}" alt="" />'
+        'Margin<span>Shift</span><i aria-hidden="true"></i></div>',
+        unsafe_allow_html=True,
+    )
 
 
 

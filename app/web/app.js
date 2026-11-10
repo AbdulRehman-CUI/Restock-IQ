@@ -27,6 +27,7 @@ const state = {
 const pages = {
   overview: ["◈", "Overview"],
   products: ["▦", "Products"],
+  market: ["↗", "Market & Pricing"],
   scenarios: ["⇄", "Scenarios"],
   performance: ["▥", "Model performance"],
   data: ["⚙", "Data & settings"],
@@ -255,6 +256,7 @@ async function safely(fn) {
 async function route() {
   if (!state.auth) return;
   state.page = location.hash.slice(1).split("/")[0] || "overview";
+  $("#main").classList.toggle("market-screen", state.page === "market");
   if (!pages[state.page]) state.page = "overview";
   $("nav").innerHTML = Object.entries(pages)
     .map(
@@ -264,7 +266,7 @@ async function route() {
     .join("");
   $("#main").innerHTML = '<div class="loading">Loading saved results…</div>';
   try {
-    await { overview, products, scenarios, performance, data: setup }[
+    await { overview, products, market, scenarios, performance, data: setup }[
       state.page
     ]();
   } catch (e) {
@@ -415,7 +417,7 @@ async function productDetail(sku) {
     h = history.rows.slice(-90),
     daily = p.inventory.daily;
   $("#main").innerHTML =
-    `<p><a href="#products">← All products</a></p>` +
+    `<p><a href="#products">← All products</a> · <a href="#market/${encodeURIComponent(sku)}">Update supplier quote / current pricing →</a></p>` +
     hero(
       esc(p.name),
       `${esc(sku)} · ${esc(p.inputs.category || "")} · ${state.meta.horizon_days}-day outlook`,

@@ -1,5 +1,7 @@
 # RestockIQ / MarginShift — Inventory and Pricing Decisions
 
+**Current pricing:** the browser app now includes **Market & Pricing**: daily USD/PKR reference refresh, manual bank rates, quote versions/reconfirmation, quote-only CSV/XLSX preview/confirmation, immutable replacement-cost assessments, alerts, comparisons and exact exports. [Feature guide](docs/MARKET_PRICING.md) · [completion report](docs/MARKET_PRICING_REPORT.md) · [deployment/schedule setup](DEPLOYMENT.md). This depends on seller-provided quotes/costs; it does not predict future prices or monitor suppliers. Offline synthetic analysis and local Streamlit remain available.
+
 **Hosted app:** https://restockiq-ar.vercel.app · [Deployment and sign-in guide](DEPLOYMENT.md). The hosted dashboard uses PostgreSQL persistence; the original local Streamlit workflow remains available below.
 
 An offline data foundation for a fictional Pakistani electronics-accessories retailer. **All generated business records, customer demand, supplier quotes, events, and FX rates are synthetic.** Business timezone: `Asia/Karachi`; reporting currency: `PKR`; prices are tax-exclusive. The default history is **2025-10-16 through 2026-10-15**, with 20 SKUs and 365 days each.

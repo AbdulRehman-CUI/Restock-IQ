@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.routes import datasets, system, ml, decisions, dashboard
+from app.api.routes import datasets, system, ml, decisions, dashboard, market
 from app.core.config import Settings
 from app.core.errors import DatasetValidationError, JobConflict, NotFound, StateConflict
 from app.db.session import Database
@@ -76,6 +76,7 @@ def create_app(settings: Settings | None = None):
     app.include_router(ml.router)
     app.include_router(decisions.router)
     app.include_router(dashboard.router)
+    app.include_router(market.router)
 
     @app.exception_handler(DatasetValidationError)
     async def dataset_error(request, exc):

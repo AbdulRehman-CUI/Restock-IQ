@@ -2,6 +2,8 @@
 
 Version: 1.0 | Date: 2026-10-16 | Status: implementation specification, not an implemented application
 
+Implementation update, 7 November 2026: the existing hosted FastAPI/PostgreSQL/browser deployment now has additive **Market & Pricing** functionality. [Current pricing architecture, provider policy, contracts, migrations and tests](docs/MARKET_PRICING.md) supersede the original offline-only exclusions for daily FX and seller-maintained quotes. New immutable market inputs and current assessment snapshots never modify historical datasets, forecasts, scenarios or recommendation results.
+
 Working name: RestockIQ. The name can be changed without changing the architecture.
 
 ## 1. Product goal

@@ -1,5 +1,27 @@
 # Vercel deployment
 
+## Market & Pricing release setup (7 November 2026)
+
+Implemented on `codex/live-fx-replacement-pricing`; **not merged, deployed or scheduled**. [Feature/provider/import policy](docs/MARKET_PRICING.md). No provider key or payment is required. Existing `DATABASE_URL`, `RESTOCKIQ_ADMIN_PASSWORD`, and `RESTOCKIQ_CLOUD` retain their roles.
+
+1. Review the branch and back up the intended database through the existing process. Additive migration 1 runs through `python -m app.cli init-db` or API startup, preserving existing tables/records. Rollback application code if needed while leaving new tables/ledger intact; no destructive down migration.
+2. Keep `RESTOCKIQ_FX_STALE_DAYS=3` and `RESTOCKIQ_QUOTE_STALE_DAYS=30` or explicitly adjust them. Manual FX refresh needs no additional configuration.
+3. For scheduling, create a strong random, header-safe **`CRON_SECRET`** (at least 16 characters) in the intended Vercel environment. Endpoint: `GET /api/v1/market/scheduled-refresh`, requiring `Authorization: Bearer <CRON_SECRET>`. A workspace session is insufficient. Unconfigured returns 503; incorrect bearer returns 401. No raw provider rate is returned.
+4. Verify the current team's plan and Container Services scheduling support in the dashboard before adding a schedule. Read-only connector checks located the RestockIQ project/team, but returned team metadata did not expose the billing plan. Official [Cron limits](https://vercel.com/docs/schedules/cron-jobs/usage-and-pricing) permit all plans, with daily execution/hour-level timing on Hobby. [Cron management](https://vercel.com/docs/schedules/cron-jobs/manage-cron-jobs) documents automatic bearer injection. Cron is currently documented as a legacy feature. This branch leaves `vercel.json` schedules unchanged pending that verification.
+5. Once verified, add this entry alongside existing `services`/`rewrites`, then deploy through the approved release process:
+
+   ```json
+   "crons": [{ "path": "/api/v1/market/scheduled-refresh", "schedule": "0 2 * * *" }]
+   ```
+
+   This is 02:00 UTC / 07:00 Asia/Karachi daily; Hobby may invoke within that hour. Database cooldown prevents more-than-daily fetching, including duplicate/manual requests. If a prior delayed invocation is less than 24 hours old, a scheduled invocation can reuse cache. If your Container Services configuration cannot register legacy Cron routes, use an HTTP scheduler with the same daily GET/bearer contract. No permanent process is required.
+6. Redeploy with the secret and verify 2xx scheduled logs before claiming automation is active. Setting an environment variable alone does not deploy code or activate a schedule. Secret rotation requires redeployment; preview and production are separate.
+7. Explicitly enable **automatic reassessment** per dataset in Market & Pricing. Scheduled calls refresh/cache-check FX, clean expired quote uploads, and save only changed financial/freshness inputs. Seller quotes, bank rates and acquisition costs still require seller input. Synthetic products have an independent real-FX opt-in. No emails, orders, storefront updates, demand retraining or background loops run.
+
+For the new browser screen locally, set `RESTOCKIQ_CLOUD=1` and a workspace password, then use the existing API server. Without `DATABASE_URL`, SQLite remains available. The original five Streamlit screens remain supported; Market & Pricing is a browser-only screen. [Executed verification](docs/MARKET_PRICING_REPORT.md) includes real localhost PostgreSQL tests and Node component checks. No browser automation/screenshots were used.
+
+## Existing hosted deployment
+
 RestockIQ's hosted application serves a lightweight browser interface and the existing FastAPI/ML engine from one Python container. The Streamlit interface remains available locally. Container Services is a Vercel beta feature.
 
 ## Configuration

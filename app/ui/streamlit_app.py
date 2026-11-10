@@ -2,13 +2,19 @@
 import os
 from datetime import date, timedelta
 from html import escape
+from pathlib import Path
 import streamlit as st
 from app.ui.api_client import APIClient, APIError
 from app.ui.common import choose, saved_get, saved_download, error, day, theme, brand, header
 from app.ui.state import reset_dataset, reset_analysis_views, resolve_analysis, demo_analysis, selected_exports
 from app.ui import overview, product, scenario, evaluation, data_settings
 
-st.set_page_config(page_title="MarginShift · Inventory intelligence", page_icon="▣", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="MarginShift · Inventory intelligence",
+    page_icon=str(Path(__file__).parents[1] / "web" / "assets" / "site-logo.png"),
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 theme()
 
 PAGES = {"Overview": overview, "Products": product, "What-if Scenarios": scenario,
