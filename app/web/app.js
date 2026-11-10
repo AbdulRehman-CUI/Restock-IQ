@@ -61,10 +61,9 @@ function notify(text, error = false) {
 async function api(path, options = {}) {
   const r = await fetch("/api/v1/" + path, {
     ...options,
+    credentials: "omit",
     headers: {
-      ...(options.body instanceof ArrayBuffer
-        ? {}
-        : { "Content-Type": "application/json" }),
+      "Content-Type": "application/json",
       ...options.headers,
     },
   });
@@ -75,7 +74,6 @@ async function api(path, options = {}) {
     } catch {
       e = { message: `Request failed (${r.status})` };
     }
-    if (r.status === 401 && path !== "login") login();
     throw Error(
       e.message ||
         e.errors
@@ -146,20 +144,6 @@ function chart(series, labels, title) {
     `<div class="legend">${series.map((s) => `<span style="--color:${s.color}">${esc(s.name)}</span>`).join("")}</div>`
   );
 }
-function login() {
-  state.auth = false;
-  $("#sidebar").hidden = true;
-  $("#logout").hidden = true;
-  $("nav").innerHTML = "";
-  $("#main").innerHTML =
-    `<section class="login"><p class="eyebrow">Welcome to RestockIQ</p><h1>Better decisions.<br>Stronger margins.</h1><p class="muted">Forecast demand, protect replacement margins, and plan your next order with confidence.</p><form id="login" class="panel"><h2>Open your workspace</h2><p class="muted">Your business records and trained models stay private.</p>${field("Workspace password", "password", "", "password", 'required autocomplete="current-password"')}<button type="submit">Sign in →</button><p class="metric-note" style="margin-top:16px">Workspace owner: find RESTOCKIQ_ADMIN_PASSWORD in your Vercel project’s environment variables.</p></form></section>`;
-  wireForm("#login", async (v) => {
-    await post("login", v);
-    state.auth = true;
-    await refresh();
-    await route();
-  });
-}
 async function refresh() {
   [state.datasets, state.analyses] = await Promise.all([
     api("datasets"),
@@ -195,9 +179,8 @@ async function refresh() {
 function sidebar() {
   const ds = state.datasets.find((d) => d.id === state.dataset);
   $("#sidebar").hidden = false;
-  $("#logout").hidden = false;
   $("#sidebar").innerHTML =
-    `<div class="side-title"><p class="eyebrow">Your workspace</p><h3>Analysis library</h3><p class="muted" style="font-size:12px">Saved work, ready when you are.</p></div>${select("Dataset", "dataset-select", state.datasets.length ? state.datasets.map((d, i) => [d.id, `${d.provenance === "synthetic" ? "Demo" : "Uploaded"} ${i + 1} · ${d.end_date}`]) : [["", "No data yet"]], state.dataset)}${select("Saved analysis", "run-select", [["", "Prepare a new analysis"], ...state.analyses.filter((r) => r.dataset_id === state.dataset).map((r, i) => [r.id, `${r.name || "Base"} · ${r.horizon_days} days · ${i + 1}`])], state.run || "")}<button id="explore" class="secondary">Explore demo ↗</button><hr><small>${ds?.provenance === "synthetic" ? "Synthetic data · fictional records and FX" : ds ? "Uploaded business data" : "Start with a demo or your own CSV files."}</small>${state.meta ? `<small style="display:block;margin-top:14px">Analysis date<br><b>${esc(state.meta.origin)}</b><br>${state.meta.horizon_days}-day outlook</small>` : ""}`;
+    `<div class="side-title"><p class="eyebrow">Public demo</p><h3>Analysis library</h3><p class="muted" style="font-size:12px">Shared synthetic data and saved analyses.</p></div>${select("Dataset", "dataset-select", state.datasets.length ? state.datasets.map((d, i) => [d.id, `${d.provenance === "synthetic" ? "Demo" : "Uploaded"} ${i + 1} · ${d.end_date}`]) : [["", "No data yet"]], state.dataset)}${select("Saved analysis", "run-select", [["", "Prepare a new analysis"], ...state.analyses.filter((r) => r.dataset_id === state.dataset).map((r, i) => [r.id, `${r.name || "Base"} · ${r.horizon_days} days · ${i + 1}`])], state.run || "")}<button id="explore" class="secondary">Explore demo ↗</button><hr><small>${ds?.provenance === "synthetic" ? "Synthetic data · fictional records and FX" : ds ? "Uploaded business data" : "Start with a synthetic demo dataset."}</small>${state.meta ? `<small style="display:block;margin-top:14px">Analysis date<br><b>${esc(state.meta.origin)}</b><br>${state.meta.horizon_days}-day outlook</small>` : ""}`;
   $("#dataset-select").onchange = async (e) => {
     state.dataset = e.target.value;
     state.run = null;
@@ -254,7 +237,6 @@ async function safely(fn) {
   }
 }
 async function route() {
-  if (!state.auth) return;
   state.page = location.hash.slice(1).split("/")[0] || "overview";
   $("#main").classList.toggle("market-screen", state.page === "market");
   if (!pages[state.page]) state.page = "overview";
@@ -570,7 +552,7 @@ async function setup() {
       "From raw data to a clear plan.",
       "Each step is saved independently. Reuse existing data and models, or prepare a fresh analysis.",
     ) +
-    `<div class="steps">${["Load data", "Review quality", "Train model", "Generate analysis"].map((s, i) => `<span class="${(i < 2 && ds) || (i === 2 && state.model) || (i === 3 && state.meta) ? "done" : ""}">${i + 1} · ${s}</span>`).join("")}</div><div class="grid"><section class="panel"><h2>1 · Explore synthetic data</h2><p class="muted">Fictional sales, inventory, suppliers and FX. The same seed produces the same records.</p><form id="demo"><div class="formgrid">${field("Products", "sku_count", 20, "number", 'min="1" max="200" required')}${field("History days", "days", 365, "number", 'min="1" max="3650" required')}${field("History start", "start_date", "2025-10-16", "date", "required")}${field("Seed", "seed", 42, "number", 'min="0" max="4294967295" required')}</div><button type="submit">Generate dataset</button></form></section><section class="panel"><h2>Or upload your own CSVs</h2><p class="muted">All six files are validated together. Existing datasets stay untouched. Maximum combined size: 12 MiB.</p><a href="/api/v1/data-contracts/templates">Download blank templates ↓</a><form id="upload" style="margin-top:16px"><div class="formgrid">${["products", "daily_sales", "inventory", "supplier_quotes", "purchase_orders", "fx_rates"].map((n) => field(n + ".csv", n, "", "file", 'accept=".csv" required')).join("")}</div><button type="submit">Validate & import</button></form></section></div>${quality ? `<section class="panel section-title"><h2>2 · Review data quality</h2><div class="row"><span class="badge">${quality.product_count} products</span><span class="badge">${esc(ds.start_date)} — ${esc(ds.end_date)}</span><span class="badge ${quality.readiness.current_cost_inputs_available ? "" : "warning"}">Cost inputs ${quality.readiness.current_cost_inputs_available ? "available" : "incomplete"}</span></div><p class="muted section-title">${quality.stockout_affected_sku_days} stock-constrained product-days. Closed and censored targets are excluded from model fitting and scoring.</p>${details("Quality findings and warnings", { warnings: quality.warnings, readiness: quality.readiness, sales_coverage: quality.sales_coverage })}${details("Full validation report and provenance", quality)}</section><section class="panel"><h2>3 · Prepare forecasting model</h2><p class="muted">Compare Random Forest and baseline forecasts using chronological validation and test periods. Keep this tab open while a job runs.</p>${select("Saved model", "model-select", [["", "Choose a completed model"], ...state.models.filter((m) => m.status === "completed").map((m) => [m.id, `${m.selected_method} · ${m.created_at.slice(0, 10)} · ${m.id.slice(0, 8)}`])], state.model || "")}<form id="train" class="row">${field("Training seed", "train_seed", 42, "number", 'min="0" max="4294967295" required')}<button type="submit">Train & evaluate</button></form></section><section class="panel"><h2>4 · Generate your analysis</h2><form id="analyze"><div class="formgrid">${field("Outlook (days)", "horizon_days", 30, "number", 'min="1" max="30" required')}${field("Price rounding step (PKR)", "price_step_pkr", 5, "number", 'min="0.01" step="0.01" required')}${field("Maximum price change (%) · optional", "max_price_change_pct", "", "number", 'min="0" max="10000" step="0.01"')}</div><button type="submit" ${state.model ? "" : "disabled"}>Generate & save analysis →</button></form></section>` : ""}<section class="panel section-title"><h2>CSV field contracts</h2><p class="muted">Use ISO dates, explicit true/false flags, and margin fractions such as 0.20. Sales must contain every product/date; inventory must match the final sales date.</p><button class="secondary" id="contracts">Show required fields</button><div id="contract-list"></div></section>`;
+    `<div class="steps">${["Load data", "Review quality", "Train model", "Generate analysis"].map((s, i) => `<span class="${(i < 2 && ds) || (i === 2 && state.model) || (i === 3 && state.meta) ? "done" : ""}">${i + 1} · ${s}</span>`).join("")}</div><div class="grid"><section class="panel"><h2>1 · Explore synthetic data</h2><p class="muted">Fictional sales, inventory, suppliers and FX. The same seed produces the same records.</p><form id="demo"><div class="formgrid">${field("Products", "sku_count", 20, "number", 'min="1" max="200" required')}${field("History days", "days", 365, "number", 'min="1" max="3650" required')}${field("History start", "start_date", "2025-10-16", "date", "required")}${field("Seed", "seed", 42, "number", 'min="0" max="4294967295" required')}</div><button type="submit">Generate dataset</button></form></section><section class="panel"><h2>CSV templates</h2><p class="muted">Bulk imports are available through the local API. Download all six blank templates to explore the data format.</p><a href="/api/v1/data-contracts/templates">Download blank templates ↓</a></section></div>${quality ? `<section class="panel section-title"><h2>2 · Review data quality</h2><div class="row"><span class="badge">${quality.product_count} products</span><span class="badge">${esc(ds.start_date)} — ${esc(ds.end_date)}</span><span class="badge ${quality.readiness.current_cost_inputs_available ? "" : "warning"}">Cost inputs ${quality.readiness.current_cost_inputs_available ? "available" : "incomplete"}</span></div><p class="muted section-title">${quality.stockout_affected_sku_days} stock-constrained product-days. Closed and censored targets are excluded from model fitting and scoring.</p>${details("Quality findings and warnings", { warnings: quality.warnings, readiness: quality.readiness, sales_coverage: quality.sales_coverage })}${details("Full validation report and provenance", quality)}</section><section class="panel"><h2>3 · Prepare forecasting model</h2><p class="muted">Compare Random Forest and baseline forecasts using chronological validation and test periods. Keep this tab open while a job runs.</p>${select("Saved model", "model-select", [["", "Choose a completed model"], ...state.models.filter((m) => m.status === "completed").map((m) => [m.id, `${m.selected_method} · ${m.created_at.slice(0, 10)} · ${m.id.slice(0, 8)}`])], state.model || "")}<form id="train" class="row">${field("Training seed", "train_seed", 42, "number", 'min="0" max="4294967295" required')}<button type="submit">Train & evaluate</button></form></section><section class="panel"><h2>4 · Generate your analysis</h2><form id="analyze"><div class="formgrid">${field("Outlook (days)", "horizon_days", 30, "number", 'min="1" max="30" required')}${field("Price rounding step (PKR)", "price_step_pkr", 5, "number", 'min="0.01" step="0.01" required')}${field("Maximum price change (%) · optional", "max_price_change_pct", "", "number", 'min="0" max="10000" step="0.01"')}</div><button type="submit" ${state.model ? "" : "disabled"}>Generate & save analysis →</button></form></section>` : ""}<section class="panel section-title"><h2>CSV field contracts</h2><p class="muted">Use ISO dates, explicit true/false flags, and margin fractions such as 0.20. Sales must contain every product/date; inventory must match the final sales date.</p><button class="secondary" id="contracts">Show required fields</button><div id="contract-list"></div></section>`;
   wireForm("#demo", async (v) => {
     const j = await post("datasets/demo", {
       seed: Number(v.seed),
@@ -579,45 +561,6 @@ async function setup() {
       sku_count: Number(v.sku_count),
     });
     await runJob(j.job_id);
-  });
-  wireForm("#upload", async () => {
-    const files = [...$("#upload").querySelectorAll("input[type=file]")].map(
-      (i) => ({
-        name: i.name === "inventory" ? "inventory.csv" : i.name + ".csv",
-        file: i.files[0],
-      }),
-    );
-    if (files.reduce((a, f) => a + f.file.size, 0) > 12 * 1024 * 1024)
-      throw Error("The combined CSV files exceed 12 MiB.");
-    const batch = await post("uploads"),
-      sizes = {};
-    for (const { name, file } of files) {
-      sizes[name] = file.size;
-      for (
-        let offset = 0, index = 0;
-        offset < file.size;
-        offset += batch.chunk_bytes, index++
-      ) {
-        notify(
-          `Uploading ${name} · ${Math.round((offset / file.size) * 100)}%`,
-        );
-        await api(`uploads/${batch.id}/${name}/${index}`, {
-          method: "PUT",
-          body: await file
-            .slice(offset, offset + batch.chunk_bytes)
-            .arrayBuffer(),
-          headers: { "Content-Type": "application/octet-stream" },
-        });
-      }
-    }
-    const result = await post(`uploads/${batch.id}/complete`, { sizes });
-    state.dataset = result.dataset_id;
-    state.run = null;
-    state.model = null;
-    state.newAnalysis = true;
-    await refresh();
-    await setup();
-    notify("Dataset validated and saved.");
   });
   if ($("#model-select"))
     $("#model-select").onchange = (e) => {
@@ -685,7 +628,6 @@ async function runJob(id) {
   $("#jobbar").hidden = false;
   let done = false;
   const poll = async () => {
-    if (!state.auth) return;
     try {
       const j = await api(`jobs/${id}`);
       $("#jobbar").textContent =
@@ -722,18 +664,10 @@ async function runJob(id) {
     );
   }
 }
-$("#logout").onclick = () =>
-  safely(async () => {
-    await post("logout");
-    login();
-  });
-window.addEventListener("hashchange", () => safely(route));
 (async () => {
   try {
-    const s = await api("session");
-    if (!s.authenticated) return login();
-    state.auth = true;
     await refresh();
+    window.addEventListener("hashchange", () => safely(route));
     await route();
     const job = localStorage.getItem("rq-job");
     if (job) runJob(job);

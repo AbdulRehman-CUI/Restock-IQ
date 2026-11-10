@@ -4,7 +4,7 @@ The hosted **Market & Pricing** screen estimates replacement cost from the selle
 
 ## Workflow
 
-1. Load a dataset using the existing six-file import or synthetic generator. No trained model or saved forecast is required for current pricing.
+1. Select a shared synthetic dataset or generate one. The six-file import is available through the local API. Current pricing works before model training or forecasting.
 2. Open **Market & Pricing**, then a product, or follow **Update supplier quote / current pricing** from historical product detail.
 3. Enter a confirmed supplier quote with its existing SKU/supplier relationship, USD or PKR price, observation/expiry, quantity tier and inventory-unit/pack basis. Enter freight and other costs per inventory unit, including explicit zero values. Missing costs block pricing. Pack quotes must match the product's pack size.
 4. Select **Refresh FX**, then reference plus spread or a manual bank selling rate. This is the rate at which the bank sells USD to the retailer. Manual rates receive no additional reference spread. Expired bank rates cannot be used; blank expiry is unknown validity.
@@ -19,7 +19,7 @@ Synthetic datasets retain their own fictional FX by default. Real reference/manu
 
 Manual quotes append immutable versions; **Reconfirm unchanged** links a new version to the previous confirmation, using the observation/expiry/note fields in the form. An absent expiry means unknown validity. Quote age and expiry are distinct. The newest current quote observation and latest confirmation supersede dataset quotes. Dataset quotes are visibly unconfirmed. Older backdated versions do not displace newer observations. For quantity tiers at the latest observation, an explicit order quantity selects the applicable tier with the highest minimum (up to 100 tiers); incompatible quantities block pricing. No supplier remapping occurs.
 
-The quote-only import supplements the six-file dataset import. Download [the blank CSV template](templates/supplier-price-list-template.csv), fill it, or save the same header/table as a single-sheet non-macro `.xlsx`:
+The quote-only import supplements the six-file dataset import in the local API. Download the blank CSV template or save the same header as a single-sheet non-macro `.xlsx`. [CSV template](templates/supplier-price-list-template.csv)
 
 ```text
 sku,supplier_id,currency,unit_price,observed_at,valid_until,min_quantity,max_quantity,unit_basis,pack_units,freight_unit_pkr,other_unit_pkr,source_reference,note
@@ -35,7 +35,7 @@ sku,supplier_id,currency,unit_price,observed_at,valid_until,min_quantity,max_qua
 | Freight / other costs | Nonnegative PKR per inventory unit, 2 decimals; blanks mark costs missing |
 | Source reference / note | Optional; HTTP(S) reference is stored as text and never fetched |
 
-Source type is assigned `CSV`, `XLSX` or `manual`. Each upload is parsed and previewed with up to 100 row findings. Invalid rows block the whole import. Confirmation requires an explicit checkbox and the exact preview hash. All quote inserts and the retry receipt share one transaction. A failed insert rolls the entire confirmation back. Retrying that upload returns the original result; a separate new upload is a new confirmation event. Duplicate SKU/observation/tier rows within one file fail validation. Manual quote APIs accept an optional UUID `Idempotency-Key`; the browser preserves it across recoverable retries of the same draft.
+Source type is assigned `CSV`, `XLSX` or `manual`. Each upload is parsed and previewed with up to 100 row findings. Invalid rows block the whole import. Confirmation requires `confirm: true` and the exact preview hash. All quote inserts and the retry receipt share one transaction. A failed insert rolls back the entire confirmation. Retrying that upload returns the original result. A separate new upload is a new confirmation event. Duplicate SKU/observation/tier rows within one file fail validation. Manual quote APIs accept an optional UUID `Idempotency-Key`, which the browser preserves across recoverable retries of the same draft.
 
 Uploads use 512 KiB chunks with immutable positions, exact declared length, a 12 MiB file limit (or smaller configured limit), 1,000 quote rows, 14 columns and 4,096 characters/cell. XLSX is limited to 100 ZIP parts and 8 MiB expanded data. Unsupported formats, multiple sheets, macros, encryption, formulas, XML entities and external relationships are rejected. No spreadsheet formula, external link, OCR or LLM runs. Parsing is in memory; uploaded ZIP contents are never extracted. Use literal ISO text timestamps.
 
@@ -64,7 +64,7 @@ Regression example with unchanged USD quote/other costs: USD 10 + PKR 200 freigh
 
 ## Provider and freshness
 
-Official references checked 7 November 2026: [open endpoint](https://www.exchangerate-api.com/docs/free), [PKR support](https://www.exchangerate-api.com/docs/supported-currencies), [terms](https://www.exchangerate-api.com/terms). Fixed HTTPS URL: `https://open.er-api.com/v6/latest/USD`. No key/payment; **daily**, not real-time. Commercial end-use and persistent caching are permitted; raw redistribution is prohibited. This application offers private workspace use, not a public FX feed. The provider describes rates as indicative; they are not executable bank rates.
+The fixed HTTPS endpoint `https://open.er-api.com/v6/latest/USD` provides indicative daily rates and requires attribution. The terms allow commercial end use and caching and restrict programmatic redistribution. The public demo release needs the FX review described in the deployment guide. [Open endpoint](https://www.exchangerate-api.com/docs/free) · [PKR support](https://www.exchangerate-api.com/docs/supported-currencies) · [Terms](https://www.exchangerate-api.com/terms) · [Deployment guide](../DEPLOYMENT.md)
 
 Pages using provider rates show linked **Rates By Exchange Rate API** attribution; exports include attribution/provenance. Redirects are not followed. Connect timeout is 4 seconds, other HTTP timeouts 8 seconds, response maximum 128 KiB, at most three transient attempts with short backoff. HTTP 429 defers at least 20 minutes or longer `Retry-After`. Transient responses with that header also defer; numeric and HTTP-date headers are supported.
 
@@ -76,19 +76,19 @@ Default stale thresholds: more than 3 days for FX (`RESTOCKIQ_FX_STALE_DAYS`), m
 
 ## API, storage and migration
 
-Prefix `/api/v1/market`; hosted private routes inherit workspace cookie and same-origin protection. Existing identity has one owner: records say `workspace-owner`, or `local-operator` locally, not invented individual usernames.
+The `/api/v1/market` demo routes work without credentials. Hosted browser writes are same-origin. New pricing settings and quote records are attributed to `public-demo` when hosted and `local-operator` when local. Previously saved attribution remains in the history.
 
 | Suffix | Purpose |
 | --- | --- |
 | `/fx`, `/fx/history`, `/fx/refresh` | GET status/history, POST refresh |
-| `/datasets/{id}/settings` | GET / POST versioned settings |
+| `/datasets/{id}/settings` | GET / POST versioned settings. Automatic reassessment can be configured through the local API only. |
 | `/datasets/{id}/catalog` | GET product/supplier/pack references |
 | `/datasets/{id}/quotes` | GET history / POST quote |
 | `/datasets/{id}/quotes/{quote}/reconfirm` | POST linked confirmation |
 | `/quote-template.csv` | GET blank template |
-| `/datasets/{id}/quote-imports` | POST metadata |
-| `/quote-imports/{id}/chunks/{position}` | PUT bounded chunk |
-| `/quote-imports/{id}/preview`, `/confirm` | POST preview / atomic confirmation |
+| `/datasets/{id}/quote-imports` | POST metadata (local API) |
+| `/quote-imports/{id}/chunks/{position}` | PUT bounded chunk (local API) |
+| `/quote-imports/{id}/preview`, `/confirm` | POST preview / atomic confirmation (local API) |
 | `/datasets/{id}/assessments` | GET history / POST calculation |
 | `/assessments/{id}`, `/compare/{other}`, `/alerts`, `/export?format=json\|csv` | GET snapshot, comparison, alerts, export |
 | `/scheduled-refresh` | GET with independent `CRON_SECRET` bearer |
@@ -97,7 +97,7 @@ Pydantic defines request/response contracts. Histories default to 50, maximum 10
 
 Migration **1**, `app/db/migrations.py`, creates only new tables/indexes/immutability triggers and `schema_versions`. PostgreSQL initialization holds an advisory transaction lock; SQLite holds an immediate transaction. Existing business records/structures are retained. The existing `create_all` bootstrap is restricted to legacy tables; market additions are applied by the versioned migration, not implicit alteration. Run `python -m app.cli init-db` or normal API startup. Rollback application code while retaining additive tables/ledger; no destructive down migration is provided. Never drop/recreate populated tables or delete the ledger.
 
-Market & Pricing is a browser/hosted screen; the original local Streamlit screens remain unchanged. Enable existing browser mode locally with `RESTOCKIQ_CLOUD=1` and a workspace password; SQLite remains available without `DATABASE_URL`. See [deployment](../DEPLOYMENT.md) for scheduling and environment steps.
+Market & Pricing is a browser screen. Use `RESTOCKIQ_CLOUD=1` to run the browser dashboard locally. SQLite remains available without `DATABASE_URL`. See the [deployment guide](../DEPLOYMENT.md) for setup and scheduling.
 
 ## Verification
 

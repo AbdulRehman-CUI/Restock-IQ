@@ -72,13 +72,11 @@ button:disabled {
   opacity: 0.45;
   cursor: wait;
 }
-.ghost,
 .secondary {
   background: white;
   border-color: var(--line);
   color: var(--ink);
 }
-.ghost:hover,
 .secondary:hover {
   background: var(--soft);
   color: var(--teal);
@@ -464,16 +462,6 @@ aside button {
   padding: 60px 20px;
   color: var(--muted);
 }
-.login {
-  max-width: 480px;
-  margin: 9vh auto;
-}
-.login h1 {
-  font-size: 36px;
-}
-.login .panel {
-  padding: 32px;
-}
 footer {
   max-width: 1530px;
   margin: auto;
@@ -587,11 +575,6 @@ footer {
   nav a span {
     display: block;
     max-width: 100px;
-  }
-  #logout {
-    margin-left: auto;
-    font-size: 11px;
-    padding: 6px 9px;
   }
   .layout {
     grid-template-columns: 1fr;

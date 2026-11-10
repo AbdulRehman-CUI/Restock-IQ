@@ -11,6 +11,7 @@ from app.db.repositories import get_summary
 from app.services.ingestion import import_dataset
 
 router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
+import_router = APIRouter(prefix=router.prefix, tags=router.tags)
 
 
 @router.post("/demo", status_code=202, response_model=JobAccepted)
@@ -19,7 +20,7 @@ def demo(config: GeneratorConfig, request: Request):
     return {"job_id": job["id"], "status_url": f"/api/v1/jobs/{job['id']}"}
 
 
-@router.post("/import", status_code=201, response_model=QualitySummary)
+@import_router.post("/import", status_code=201, response_model=QualitySummary)
 def import_csvs(request: Request,
                 products: UploadFile = File(...), daily_sales: UploadFile = File(...),
                 inventory: UploadFile = File(...), supplier_quotes: UploadFile = File(...),

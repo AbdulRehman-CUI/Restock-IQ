@@ -1,4 +1,4 @@
-"""Private workspace pricing routes; the sole scheduled route uses its own bearer secret."""
+"""Demo pricing routes and separately authorized scheduled refresh."""
 import csv
 import hmac
 import io
@@ -18,11 +18,11 @@ from app.services.fx import refresh_fx, fx_status, observation_view
 from app.services.exports import spreadsheet_safe
 
 router = APIRouter(prefix="/api/v1/market", tags=["current market and pricing"])
+import_router = APIRouter(prefix=router.prefix, tags=router.tags)
 
 
 def identity(request):
-    # Existing authentication has one workspace owner; never trust a client-supplied username.
-    return "workspace-owner" if request.app.state.settings.cloud_mode else "local-operator"
+    return "public-demo" if request.app.state.settings.cloud_mode else "local-operator"
 
 
 @router.get("/fx", response_model=FXStatus)
@@ -49,7 +49,8 @@ def settings(dataset_id: UUID, request: Request):
 
 @router.post("/datasets/{dataset_id}/settings", response_model=SettingsView, status_code=201)
 def settings_save(dataset_id: UUID, body: RateSettings, request: Request):
-    return market.save_settings(request.app.state.db, dataset_id, body, identity(request))
+    return market.save_settings(request.app.state.db, dataset_id, body, identity(request),
+                                can_configure_schedule=not request.app.state.settings.cloud_mode)
 
 
 @router.get("/datasets/{dataset_id}/catalog")
@@ -87,12 +88,12 @@ def quote_template():
                     headers={"Content-Disposition": 'attachment; filename="supplier-price-list-template.csv"'})
 
 
-@router.post("/datasets/{dataset_id}/quote-imports", status_code=201, response_model=UploadTicket)
+@import_router.post("/datasets/{dataset_id}/quote-imports", status_code=201, response_model=UploadTicket)
 def start(dataset_id: UUID, body: UploadStart, request: Request):
     return quote_imports.start_upload(request.app.state.db, dataset_id, body, request.app.state.settings.max_upload_bytes)
 
 
-@router.put("/quote-imports/{identifier}/chunks/{position}", response_model=ChunkReceipt)
+@import_router.put("/quote-imports/{identifier}/chunks/{position}", response_model=ChunkReceipt)
 async def chunk(identifier: UUID, position: int, request: Request):
     data = bytearray()
     async for part in request.stream():
@@ -102,12 +103,12 @@ async def chunk(identifier: UUID, position: int, request: Request):
     return quote_imports.put_chunk(request.app.state.db, identifier, position, bytes(data))
 
 
-@router.post("/quote-imports/{identifier}/preview", response_model=ImportPreview)
+@import_router.post("/quote-imports/{identifier}/preview", response_model=ImportPreview)
 def preview(identifier: UUID, request: Request):
     return quote_imports.preview_upload(request.app.state.db, identifier)
 
 
-@router.post("/quote-imports/{identifier}/confirm", status_code=201, response_model=ImportReceipt)
+@import_router.post("/quote-imports/{identifier}/confirm", status_code=201, response_model=ImportReceipt)
 def confirm(identifier: UUID, body: ConfirmImport, request: Request):
     return quote_imports.confirm_upload(request.app.state.db, identifier, body, identity(request))
 

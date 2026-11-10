@@ -70,7 +70,6 @@ def create_app(settings: Settings | None = None):
             db.engine.dispose()
 
     app = FastAPI(title="RestockIQ — Data and Demand Forecasting", version="0.2.0", lifespan=lifespan)
-    app.add_middleware(UploadLimitMiddleware, max_bytes=settings.max_upload_bytes)
     app.include_router(system.router)
     app.include_router(datasets.router)
     app.include_router(ml.router)
@@ -112,12 +111,16 @@ def create_app(settings: Settings | None = None):
         return JSONResponse({"code": "internal_error", "error_id": error_id,
                              "message": "Unexpected server error; check the local log using error_id."}, 500)
     if settings.cloud_mode:
-        from app.api.cloud import router, cloud_access
+        from app.api.cloud import router, cloud_headers
         from fastapi.staticfiles import StaticFiles
         from app.core.config import PROJECT_ROOT
-        app.middleware("http")(cloud_access)
+        app.middleware("http")(cloud_headers)
         app.include_router(router)
         app.mount("/", StaticFiles(directory=PROJECT_ROOT / "app" / "web", html=True), name="web")
+    else:
+        app.add_middleware(UploadLimitMiddleware, max_bytes=settings.max_upload_bytes)
+        app.include_router(datasets.import_router)
+        app.include_router(market.import_router)
     return app
 
 

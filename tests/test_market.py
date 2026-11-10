@@ -360,17 +360,21 @@ def test_synthetic_requires_explicit_real_fx_opt_in(db,settings,batch_dir):
     assert D(mixed["products"][0]["effective_rate"])==999
 
 
-def test_authenticated_api_schedule_export_and_dom(settings,monkeypatch):
-    monkeypatch.setenv("RESTOCKIQ_ADMIN_PASSWORD","test-secret")
-    monkeypatch.setenv("CRON_SECRET","recorded-cron-secret-only")
+def test_public_market_api_schedule_export_and_dom(settings,monkeypatch):
+    monkeypatch.delenv("CRON_SECRET", raising=False)
     with TestClient(create_app(replace(settings,cloud_mode=True))) as client:
-        assert client.get("/api/v1/market/fx").status_code==401
-        assert client.post("/api/v1/market/fx/refresh").status_code==401
+        assert client.get("/api/v1/market/fx").status_code==200
+        assert client.get("/api/v1/market/scheduled-refresh").status_code==503
+        monkeypatch.setenv("CRON_SECRET","recorded-cron-secret-only")
         assert client.get("/api/v1/market/scheduled-refresh").status_code==401
         assert client.get("/api/v1/market/scheduled-refresh",headers={"Authorization":"Bearer wrong"}).status_code==401
         dataset=import_dataset(client.app.state.db,settings,Path(__file__).parent/"fixtures"/"small")["dataset_id"]
         root=f"/api/v1/market/datasets/{dataset}"
-        client.post("/api/v1/login",json={"password":"test-secret"}).raise_for_status()
+        assert client.post(root+"/settings",json={"auto_assess":True}).status_code==409
+        save_settings(client.app.state.db,dataset,RateSettings(auto_assess=True),"local-operator")
+        assert client.post(root+"/settings",json={"spread_percent":"1"}).json()["values"]["auto_assess"] is True
+        assert client.post(root+"/settings",json={"auto_assess":False}).status_code==409
+        save_settings(client.app.state.db,dataset,RateSettings(),"local-operator")
         key=str(uuid4())
         created=client.post(root+"/quotes",json=quote().model_dump(mode="json"),headers={"Idempotency-Key":key})
         assert created.status_code==201,created.text
@@ -390,8 +394,9 @@ def test_authenticated_api_schedule_export_and_dom(settings,monkeypatch):
         assert client.get("/market.js").status_code==200
         html=client.get("/").text
         assert '/market.js' in html
+        assert 'id="notice" role="status" aria-live="polite"' in html
     source=(Path(__file__).parents[1]/"app/web/market.js").read_text(encoding="utf-8")
-    assert "Recalculate current pricing" in source and "aria-live" in source
+    assert "Recalculate current pricing" in source
     assert 'timeZone: "Asia/Karachi"' in source and "Idempotency-Key" in source
 
 

@@ -57,7 +57,7 @@ def get_settings(db, dataset_id):
         return settings_view(settings_record(session, dataset_id))
 
 
-def save_settings(db, dataset_id, values, supplied_by):
+def save_settings(db, dataset_id, values, supplied_by, *, can_configure_schedule=True):
     with db.transaction() as session:
         dataset = dataset_record(session, dataset_id, lock=True)
         if values.payment_fee_sku and session.scalar(select(Product.sku).where(
@@ -67,6 +67,11 @@ def save_settings(db, dataset_id, values, supplied_by):
             raise StateConflict("Explicitly opt in to real FX before using a bank rate with synthetic products")
         prior = settings_record(session, dataset_id)
         payload = values.model_dump(mode="json")
+        if not can_configure_schedule:
+            scheduled = prior.values.get("auto_assess", False) if prior else False
+            if "auto_assess" in values.model_fields_set and values.auto_assess != scheduled:
+                raise StateConflict("Scheduled reassessment can only be configured locally")
+            payload["auto_assess"] = scheduled
         if prior and prior.values == payload:
             return settings_view(prior)
         row = MarketSettings(id=str(uuid4()), dataset_id=str(dataset_id), created_at=instant(now_utc()),

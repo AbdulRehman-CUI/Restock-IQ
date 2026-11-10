@@ -57,7 +57,6 @@ function rateForm(saved, synthetic, products) {
     ${field("Total payment fee for that batch (PKR)", "payment_fee_total_pkr", v.payment_fee_total_pkr, "number", 'min="0" step="0.01" required')}
     ${marketSelect("Fixed-fee batch SKU (fee applied only to this product)", "payment-fee-sku", [["", "No fee batch selected"], ...products.map(p => [p.sku, p.name])], v.payment_fee_sku || "")}
     </div>${synthetic ? `<label class="check-row"><input type="checkbox" id="real-fx" ${v.real_fx_opt_in ? "checked" : ""}> Explicitly apply real FX to synthetic products. Supplier history remains fictional.</label>` : ""}
-    <label class="check-row"><input type="checkbox" id="auto-assess" ${v.auto_assess ? "checked" : ""}> Reassess this dataset during configured scheduled refreshes when relevant inputs change.</label>
     <p class="metric-note">Fixed payment fees are divided equally across the selected SKU's explicit batch quantity, once only. Mixed-SKU shipment fee allocation is outside this release. Freight/other costs are per inventory unit, including for pack quotes. No quantity is inferred.</p>
     <button type="submit">Save settings</button><small> ${saved.created_at ? "Saved " + esc(marketTime(saved.created_at)) + " by " + esc(saved.supplied_by) : "Default settings; no real FX applied to synthetic data"}</small></form></section>`;
 }
@@ -81,7 +80,7 @@ function wireRates(synthetic) {
       payment_fee_total_pkr: v.payment_fee_total_pkr,
       payment_fee_sku: $("#payment-fee-sku").value || null,
       pricing: {price_step_pkr: v.price_step_pkr, max_price_change_pct: v.max_price_change_pct || null},
-      real_fx_opt_in: synthetic && $("#real-fx").checked, auto_assess: $("#auto-assess").checked
+      real_fx_opt_in: synthetic && $("#real-fx").checked
     });
     notify("Settings saved. Recalculate to save a new pricing assessment.");
     $("#saved-settings").textContent = "Settings version saved at " + marketTime(result.created_at);
@@ -121,35 +120,6 @@ function wireQuote(products) {
     if (previous !== serialized) { key = crypto.randomUUID(); previous = serialized; }
     await api(marketBase() + "/quotes", {method: "POST", headers: {"Idempotency-Key": key}, body: serialized});
     notify("Confirmed quote saved. Recalculate current pricing to use this version.");
-  });
-}
-function importForm() {
-  return `<section class="panel"><h2>Import a supplier price list</h2><p class="muted">Separate from the six-file dataset import. Use the template header and ISO timestamps with timezone offsets. XLSX must contain one sheet of literal values; formulas, macros and external links are rejected.</p><a href="/api/v1/market/quote-template.csv" class="button secondary">Download CSV template</a><form id="quote-upload"><div class="field"><label for="quote-file">CSV or XLSX · maximum 12 MiB / 1,000 rows</label><input id="quote-file" type="file" accept=".csv,.xlsx" required></div><button type="submit">Upload & preview</button></form><div id="quote-preview" aria-live="polite"></div></section>`;
-}
-function wireImport() {
-  wireForm("#quote-upload", async () => {
-    const file = $("#quote-file").files[0];
-    if (file.size > 12 * 1024 * 1024) throw Error("The quote file exceeds 12 MiB.");
-    const upload = await post(marketBase() + "/quote-imports", {filename: file.name, size: file.size});
-    $("#quote-preview").textContent = "Uploading price list…";
-    for (let position=0, offset=0; offset<file.size; position++, offset+=upload.chunk_bytes) {
-      const body = await file.slice(offset, offset+upload.chunk_bytes).arrayBuffer();
-      await api(`market/quote-imports/${upload.id}/chunks/${position}`, {method: "PUT", body});
-    }
-    const preview = await post(`market/quote-imports/${upload.id}/preview`);
-    $("#quote-preview").innerHTML = `<h3>Preview · ${preview.row_count} valid quote rows</h3>${preview.error_count ? `<p class="error">${preview.error_count} findings. Nothing can be imported until corrected.</p>` : "<p>Review every quote before confirming. Existing versions will be preserved.</p>"}
-      ${table(["SKU", "Supplier", "Currency", "Price", "Basis", "Observed", "Valid until"], preview.quotes.map(q => [esc(q.sku),esc(q.supplier_id),esc(q.currency),esc(q.unit_price),esc(q.unit_basis)+" / "+q.pack_units,esc(marketTime(q.observed_at)),esc(marketTime(q.valid_until))]))}
-      ${preview.findings.map(f => `<p>Row ${esc(f.row || "file")}: ${esc(f.message)}</p>`).join("")}
-      ${preview.can_confirm ? '<label class="check-row"><input type="checkbox" id="confirm-quotes"> I reviewed these quotes and confirm the import.</label><button id="commit-quotes" disabled>Confirm import</button>' : ""}`;
-    if (preview.can_confirm) {
-      $("#confirm-quotes").onchange = () => { $("#commit-quotes").disabled = !$("#confirm-quotes").checked; };
-      marketAction("#commit-quotes", async () => {
-        if (!$("#confirm-quotes").checked) return;
-        const r = await post(`market/quote-imports/${upload.id}/confirm`, {confirm: true, preview_hash: preview.preview_hash});
-        $("#quote-preview").textContent = `${r.count} quote versions imported successfully. Recalculate pricing to use them.`;
-        notify("Price list imported atomically.");
-      });
-    }
   });
 }
 function assessmentTable(result) {
@@ -192,7 +162,8 @@ async function market() {
     ${rateForm(saved, synthetic, catalog.products)}<p id="saved-settings" role="status"></p>
     <section class="panel"><h2>Current price adjustments</h2><button id="recalculate-market">Recalculate current pricing${chosen ? " for " + esc(chosen) : ""}</button><p class="metric-note">Minimum funding price covers the estimated replacement inputs only; it is not full business break-even. Review quote validity and constraints before acting.</p><div id="market-assessment">${assessmentTable(result)}</div></section>
     ${chosen ? '<section class="panel" id="market-product-detail"></section>' : ""}
-    ${quoteForm(catalog.products, selected.sku, quote)}${importForm()}
+    ${quoteForm(catalog.products, selected.sku, quote)}
+    <section class="panel"><h2>Supplier price list template</h2><p class="muted">Bulk imports are available through the local API.</p><a href="/api/v1/market/quote-template.csv" class="button secondary">Download CSV template</a></section>
     <section class="panel"><h2>Quote history · ${esc(selected.sku)}</h2>${table(["Confirmed", "Supplier", "Price", "Expiry", "Source", ""], quotes.filter(q => q.sku === selected.sku).map(q => [esc(marketTime(q.observed_at)),esc(q.supplier_id),esc(q.values.currency)+" "+esc(q.values.unit_price),esc(marketTime(q.values.valid_until)),esc(q.values.source_type)+" · "+esc(q.supplied_by),`<button class="secondary reconfirm-quote" data-id="${esc(q.id)}">Reconfirm unchanged</button>`]))}<p class="metric-note">Latest 50 quote versions. Reconfirmation uses the quote observation and expiry fields in the form above; check them before confirming.</p></section>
     <section class="panel"><h2>Pricing assessment history</h2>${marketSelect("Saved assessment", "market-history", history.map(h => [h.id,marketTime(h.assessed_at)+" · "+h.label]), result?.id)}<button id="open-market-assessment" class="secondary">Open saved assessment</button>
     ${marketSelect("Compare from assessment", "market-before", history.map(h => [h.id,marketTime(h.assessed_at)]), history[1]?.id || result?.id)}<button id="compare-market" class="secondary">Compare with displayed assessment</button><div id="market-comparison"></div><p class="metric-note">Latest 50 assessments. Identical input submissions reuse the original assessment and timestamp.</p></section>`;
@@ -207,7 +178,7 @@ async function market() {
     if ($("#jump-quote")) $("#jump-quote").onclick = e => {e.preventDefault(); $("#unit_price").focus();};
   };
   renderDetail();
-  wireRates(synthetic); wireQuote(catalog.products); wireImport();
+  wireRates(synthetic); wireQuote(catalog.products);
   marketAction("#refresh-fx", async () => {await post("market/fx/refresh"); await market(); notify("FX status checked. Daily cooldown and provider timestamps apply.");});
   marketAction("#recalculate-market", async () => {
     result = await post(marketBase()+"/assessments", {sku: chosen || null});
