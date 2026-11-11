@@ -106,6 +106,15 @@ class FXRateView(Record):
 
 class FXStatus(Record):
     status: Literal["fresh", "stale", "unavailable"]
+    data_status: Literal["live", "cached", "stale", "demo", "unavailable"] | None = None
+    base_currency: Literal["USD"] = "USD"
+    target_currency: Literal["PKR"] = "PKR"
+    rate: str | None = None
+    provider: str | None = None
+    source: str | None = None
+    last_updated_at: str | None = None
+    refresh_enabled: bool | None = None
+    fallback_reason: str | None = None
     observation: FXRateView | None
     age_seconds: int | None
     last_attempt_at: str | None

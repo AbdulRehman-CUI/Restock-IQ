@@ -14,7 +14,7 @@ from app.api.schemas.market import (RateSettings, QuoteInput, ReconfirmQuote, As
     UploadTicket, ChunkReceipt, ImportPreview, ImportReceipt, AssessmentSummary, ProductAlert, ScheduledResult)
 from app.db.market import FXObservation, PricingAssessment
 from app.services import market, quote_imports
-from app.services.fx import refresh_fx, fx_status, observation_view
+from app.services.fx import current_fx, refresh_fx, observation_view, with_demo_fx
 from app.services.exports import spreadsheet_safe
 
 router = APIRouter(prefix="/api/v1/market", tags=["current market and pricing"])
@@ -26,13 +26,14 @@ def identity(request):
 
 
 @router.get("/fx", response_model=FXStatus)
-def status(request: Request):
-    return fx_status(request.app.state.db, request.app.state.settings)
+def status(request: Request, dataset_id: UUID | None = None):
+    return current_fx(request.app.state.db, request.app.state.settings, dataset_id)
 
 
 @router.post("/fx/refresh", response_model=FXStatus)
-def refresh(request: Request):
-    return refresh_fx(request.app.state.db, request.app.state.settings)
+def refresh(request: Request, dataset_id: UUID | None = None):
+    db = request.app.state.db
+    return with_demo_fx(db, refresh_fx(db, request.app.state.settings), dataset_id)
 
 
 @router.get("/fx/history", response_model=list[FXRateView])

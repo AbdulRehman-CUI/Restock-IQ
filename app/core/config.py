@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import os
 
@@ -24,6 +24,9 @@ class Settings:
     max_upload_bytes: int = 12 * 1024 * 1024
     fx_stale_days: int = 3
     quote_stale_days: int = 30
+    exchange_rate_api_key: str = field(default="", repr=False)
+    exchange_rate_api_provider: str = "exchange-rate-api"
+    exchange_rate_api_base_url: str = field(default="", repr=False)
 
     def __post_init__(self):
         object.__setattr__(self, "data_dir", resolve_path(self.data_dir))
@@ -45,4 +48,7 @@ class Settings:
             max_upload_bytes=int(os.getenv("RESTOCKIQ_MAX_UPLOAD_BYTES", 12 * 1024 * 1024)),
             fx_stale_days=int(os.getenv("RESTOCKIQ_FX_STALE_DAYS", 3)),
             quote_stale_days=int(os.getenv("RESTOCKIQ_QUOTE_STALE_DAYS", 30)),
+            exchange_rate_api_key=os.getenv("EXCHANGE_RATE_API_KEY", "").strip(),
+            exchange_rate_api_provider=os.getenv("EXCHANGE_RATE_API_PROVIDER", "exchange-rate-api").strip().lower(),
+            exchange_rate_api_base_url=os.getenv("EXCHANGE_RATE_API_BASE_URL", "").strip(),
         )

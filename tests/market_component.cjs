@@ -37,6 +37,26 @@ test("quote forms escape values, use existing suppliers and require explicit cos
   `, context);
 });
 
+test("FX panel labels loading, provider data and synthetic fallback", () => {
+  const {context} = component();
+  vm.runInContext(`
+    const demo = fxPanel({data_status: "demo", rate: "280", last_updated_at: "2026-10-15",
+      source: "Synthetic dataset", refresh_enabled: false, fallback_reason: "missing_api_key"});
+    assert.match(demo, /Demo/);
+    assert.match(demo, /280 PKR per USD/);
+    assert.match(demo, /Synthetic dataset/);
+    assert.match(demo, /2026-10-15/);
+    assert.match(demo, /id="refresh-fx" disabled/);
+    assert.match(fxPanel(null), /Loading FX status/);
+    assert.match(fxPanel({data_status: "unavailable"}), /Reference rate unavailable/);
+    const stale = fxPanel({data_status: "stale", observation: {}, rate: "280",
+      refresh_failed: true, error: "<invalid>", last_updated_at: "2026-11-06T10:00:00Z"});
+    assert.match(stale, /Stale/);
+    assert.match(stale, /Rates By Exchange Rate API/);
+    assert.match(stale, /&lt;invalid&gt;.*last saved rate/);
+  `, context);
+});
+
 test("bank mode disables reference spread and submits no second spread", async () => {
   const {context, element} = component();
   element("#rate-mode").value = "manual_bank";

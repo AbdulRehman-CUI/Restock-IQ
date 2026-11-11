@@ -13,7 +13,7 @@ The hosted **Market & Pricing** screen estimates replacement cost from the selle
 
 Identical submissions reuse the original assessment and timestamp. Ages in saved assessments mean age **at assessment time**. Normal age ticking does not create new histories; freshness-state changes do. Automatic comparison considers the latest 20 records with the same SKU scope; explicit comparison supports any saved IDs.
 
-Synthetic datasets retain their own fictional FX by default. Real reference/manual FX requires explicit opt-in and the label **Synthetic products with real FX**. Fictional supplier history remains unconfirmed, and fetching FX never reconfirms quotes. The default synthetic analysis remains offline.
+Synthetic pricing uses its own USD/PKR assumptions by default. Opt in to apply a provider observation or manual bank rate. If the reference is unavailable, a synthetic dataset with a sample USD rate uses that rate and keeps the **Entirely synthetic pricing** label. A failed refresh with a saved observation uses the last known market rate and flags it as stale. Fictional supplier history remains unconfirmed. Historical dataset analyses continue to use the rates saved with their inputs.
 
 ## Quote versions and imports
 
@@ -64,13 +64,15 @@ Regression example with unchanged USD quote/other costs: USD 10 + PKR 200 freigh
 
 ## Provider and freshness
 
-The fixed HTTPS endpoint `https://open.er-api.com/v6/latest/USD` provides indicative daily rates and requires attribution. The terms allow commercial end use and caching and restrict programmatic redistribution. The public demo release needs the FX review described in the deployment guide. [Open endpoint](https://www.exchangerate-api.com/docs/free) · [PKR support](https://www.exchangerate-api.com/docs/supported-currencies) · [Terms](https://www.exchangerate-api.com/terms) · [Deployment guide](../DEPLOYMENT.md)
+The default provider mode uses the authenticated ExchangeRate-API Standard USD endpoint. The previous open feed remains an explicit configuration option. Both modes use the existing observation history and refresh lease. A blank Standard key disables provider requests. [Configuration and public-demo terms](../DEPLOYMENT.md#configure-usdpkr-rates) · [Standard API](https://www.exchangerate-api.com/docs/standard-requests)
 
 Pages using provider rates show linked **Rates By Exchange Rate API** attribution; exports include attribution/provenance. Redirects are not followed. Connect timeout is 4 seconds, other HTTP timeouts 8 seconds, response maximum 128 KiB, at most three transient attempts with short backoff. HTTP 429 defers at least 20 minutes or longer `Retry-After`. Transient responses with that header also defer; numeric and HTTP-date headers are supported.
 
 Validation requires success, USD base/identity rate, positive finite PKR, positive integer timestamps, observation before next update, next update within three days, and no observation more than five minutes in the future. UTC text timestamps must agree if present. Observation/source/next-update/first-fetched time are immutable. Regressing observations or altered contents for an existing observation are rejected. Latest usable reference is the newest validated observation not later than assessment time. Its age comes from **provider time**, never retrieval time.
 
-A database compare-and-set lease lasts 90 seconds. Success permits another fetch no sooner than 24 hours later **and** no sooner than provider next-update time. Manual refresh respects this cooldown. Failures preserve the last observation and display a separate failure state, deferring further attempts 20 minutes or longer provider backoff. No valid observation means unavailable with manual entry offered; real FX never silently becomes synthetic.
+A database compare-and-set lease lasts 90 seconds. After a success, the next request can fetch when both 24 hours and the provider’s next-update time have passed. Dashboard reads, manual refresh, new current-pricing assessments, and scheduled refresh all use this cooldown. Failures retain the last observation as stale and defer new attempts for at least 20 minutes or longer provider backoff. Missing or unsupported configuration does not issue provider requests.
+
+The status endpoint reports `data_status` as `live`, `cached`, `stale`, `demo`, or `unavailable`. The response includes the USD base, PKR target, exact rate, provider/source, provider update time, last fetch time, and a fallback reason when applicable. For compatibility, `status` retains the original market-observation states. With an optional `dataset_id`, the FX status or refresh endpoint may report a sample rate from a synthetic dataset when no market observation exists.
 
 Default stale thresholds: more than 3 days for FX (`RESTOCKIQ_FX_STALE_DAYS`), more than 30 days for quotes (`RESTOCKIQ_QUOTE_STALE_DAYS`). Expired, unconfirmed, unknown-validity or stale quotes yield indicative estimates with warnings. Missing costs/FX and unit/quantity mismatches block pricing.
 
@@ -80,7 +82,7 @@ The `/api/v1/market` demo routes work without credentials. Hosted browser writes
 
 | Suffix | Purpose |
 | --- | --- |
-| `/fx`, `/fx/history`, `/fx/refresh` | GET status/history, POST refresh |
+| `/fx`, `/fx/history`, `/fx/refresh` | GET current status and observation history, POST controlled refresh. Pass `?dataset_id=<uuid>` to status or refresh for a synthetic fallback when available. |
 | `/datasets/{id}/settings` | GET / POST versioned settings. Automatic reassessment can be configured through the local API only. |
 | `/datasets/{id}/catalog` | GET product/supplier/pack references |
 | `/datasets/{id}/quotes` | GET history / POST quote |

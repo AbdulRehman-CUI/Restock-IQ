@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal as D
 from pathlib import Path
+import logging
 from threading import Event
 from uuid import uuid4
 from zipfile import ZipFile
@@ -24,7 +25,8 @@ from app.core.errors import StateConflict
 from app.db.market import FXObservation, MarketQuote, PricingAssessment, SchemaVersion
 from app.db.models import Dataset, Product, FXRate, SupplierQuote, Base
 from app.db.session import Database
-from app.services.fx import (ExchangeRateAPI, ProviderError, Observation, parse_observation, refresh_fx, fx_status, instant)
+from app.services.fx import (ExchangeRateAPI, ProviderError, Observation, parse_observation, refresh_fx, fx_status, instant,
+    STANDARD_SOURCE)
 from app.services.ingestion import import_dataset
 from app.services.market import (create_quote, create_assessment, save_settings, reconfirm_quote, quote_history,
     compare_assessments, auto_assess, product_result)
@@ -79,6 +81,102 @@ def test_provider_decimal_success_and_fixed_url():
     assert result.rate == D("280.123457")
     assert result.observed_at == OBSERVED and result.next_update_at > result.observed_at
     assert calls == ["https://open.er-api.com/v6/latest/USD"]
+
+
+def test_keyed_provider_drives_api_cache_and_pricing(db, settings, dataset, monkeypatch, caplog):
+    key = "test-key-only-no-live-credentials"
+    configured = replace(settings, exchange_rate_api_key=key, cloud_mode=True)
+    clock = [NOW]
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        assert request.url.host == "v6.exchangerate-api.com"
+        assert request.url.path == f"/v6/{key}/latest/USD"
+        if len(calls) > 1:
+            return httpx.Response(503, headers={"Retry-After": "3600", "X-Untrusted": key})
+        data = response_data()
+        data["conversion_rates"] = {"USD": 1, "PKR": 280}
+        data.pop("rates")
+        return httpx.Response(200, json=data)
+
+    caplog.set_level(logging.DEBUG)
+    upstream = httpx.Client(transport=httpx.MockTransport(respond))
+    monkeypatch.setattr("app.services.fx.ExchangeRateAPI",
+                        lambda **kwargs: ExchangeRateAPI(upstream, **kwargs))
+    monkeypatch.setattr("app.services.fx.now_utc", lambda: clock[0])
+    create_quote(db, dataset, quote(), "test")
+    with upstream, TestClient(create_app(configured)) as client:
+        root = "/api/v1/market"
+        live = client.get(root + "/fx").json()
+        assert live["data_status"] == "live"
+        assert (live["base_currency"], live["target_currency"], D(live["rate"])) == ("USD", "PKR", D("280"))
+        assert live["source"] == STANDARD_SOURCE and live["last_updated_at"] == instant(OBSERVED)
+        cached = client.post(root + "/fx/refresh").json()
+        assert cached["data_status"] == "cached" and len(calls) == 1
+        assessment = client.post(f"{root}/datasets/{dataset}/assessments", json={"sku": "CHG-001"}).json()
+        assert D(assessment["products"][0]["replacement_cost_pkr"]) == 3000
+        assert assessment["rate_selection"]["fx_observation_id"] == live["observation"]["id"]
+        clock[0] = NOW + timedelta(days=1, seconds=1)
+        stale = client.get(root + "/fx").json()
+        assert stale["data_status"] == "stale" and stale["fallback_reason"] == "refresh_failed"
+        assert stale["observation"] == live["observation"]
+        assert stale["next_attempt_at"] == instant(clock[0] + timedelta(hours=1))
+        assert client.get(root + "/fx").json() == stale and len(calls) == 2
+        saved = client.get(f"{root}/assessments/{assessment['id']}").json()
+        assert saved == assessment
+        for response in (live, cached, stale, saved, client.get(root + "/fx/history").json()):
+            assert key not in json.dumps(response)
+        assert key not in client.get("/market.js").text
+    assert key not in repr(configured)
+    assert key not in caplog.text
+
+
+@pytest.mark.parametrize(("status", "error", "message"), [
+    (401, "invalid-key", "rejected the credentials"),
+    (400, "invalid-key", "rejected the credentials"),
+    (200, "inactive-account", "rejected the credentials"),
+    (200, "quota-reached", "quota reached"),
+    (403, "quota-reached", "quota reached"),
+])
+def test_keyed_provider_errors_are_safe(settings, status, error, message):
+    key = "test-invalid-provider-key"
+    configured = replace(settings, exchange_rate_api_key=key,
+                         exchange_rate_api_base_url="https://rates.example.test/v6/")
+
+    def respond(request):
+        assert str(request.url) == f"https://rates.example.test/v6/{key}/latest/USD"
+        return httpx.Response(status, json={"result": "error", "error-type": error, "detail": key})
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client, pytest.raises(ProviderError, match=message) as exc:
+        ExchangeRateAPI(client, settings=configured).fetch(NOW)
+    assert key not in str(exc.value)
+    if error == "quota-reached":
+        assert exc.value.retry_at == NOW + timedelta(hours=1)
+
+
+def test_missing_key_uses_only_the_synthetic_dataset_rate(db, settings, dataset, monkeypatch):
+    def unexpected_provider(**kwargs):
+        pytest.fail("Missing key must not instantiate the provider")
+
+    monkeypatch.setattr("app.services.fx.ExchangeRateAPI", unexpected_provider)
+    with db.transaction() as session:
+        session.get(Dataset, dataset).provenance = "synthetic"
+    save_settings(db, dataset, RateSettings(real_fx_opt_in=True), "test")
+    create_quote(db, dataset, quote(), "test")
+    with TestClient(create_app(settings)) as client:
+        root = "/api/v1/market"
+        assert client.get(root + "/fx").json()["data_status"] == "unavailable"
+        demo = client.get(root + "/fx", params={"dataset_id": dataset}).json()
+        assert demo["data_status"] == "demo" and demo["fallback_reason"] == "missing_api_key"
+        assert D(demo["rate"]) > 0 and demo["source"] == "Synthetic dataset"
+        assert demo["observation"] is None and demo["last_success_at"] is None
+        assert client.post(root + "/fx/refresh", params={"dataset_id": dataset}).json() == demo
+        result = client.post(f"{root}/datasets/{dataset}/assessments", json={"sku": "CHG-001"}).json()
+        assert result["label"] == "Entirely synthetic pricing"
+        assert D(result["products"][0]["replacement_cost_pkr"]) == (
+            10 * D(demo["rate"]) + 200).quantize(D("0.01"))
+        assert "DEMO_FX_RATE" in result["products"][0]["warnings"]
 
 
 @pytest.mark.parametrize("payload", [b"bad json", b"null", b"[]", json.dumps(response_data(result="error")).encode(),

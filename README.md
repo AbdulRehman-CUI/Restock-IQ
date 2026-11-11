@@ -1,6 +1,6 @@
 # RestockIQ / MarginShift — Inventory and Pricing Decisions
 
-**Current pricing:** the browser app includes **Market & Pricing** with daily USD/PKR reference refresh, manual bank rates, quote versions and reconfirmation, immutable replacement-cost assessments, alerts, comparisons and exact exports. Quote-only CSV/XLSX import is available through the local API. [Feature guide](docs/MARKET_PRICING.md) · [completion report](docs/MARKET_PRICING_REPORT.md) · [deployment/schedule setup](DEPLOYMENT.md).
+**Current pricing:** the browser app includes **Market & Pricing** with optional authenticated daily USD/PKR rates, manual bank rates, quote versions and reconfirmation, immutable replacement-cost assessments, alerts, comparisons and exact exports. Quote-only CSV/XLSX import is available through the local API. [FX setup](DEPLOYMENT.md#configure-usdpkr-rates) · [Feature guide](docs/MARKET_PRICING.md).
 
 **Hosted app:** https://restockiq-ar.vercel.app · [Public demo deployment guide](DEPLOYMENT.md). The browser dashboard opens directly to the shared demo data in PostgreSQL. The local Streamlit workflow is available below.
 
@@ -23,7 +23,7 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m app.cli serve
 ```
 
-Open [API documentation](http://127.0.0.1:8000/docs) after starting the service. Run one API process, with one local worker; do not run several Uvicorn workers or a second API against the same database. Stop with Ctrl+C; normal shutdown waits for the current job. No external service or network access is used after dependency installation. Update a Phase 1 environment using the same two pip install commands above. `init-db` creates model/forecast tables additively without dropping or recreating business tables.
+Open [API documentation](http://127.0.0.1:8000/docs) after starting the service. Run one API process with one local worker. Stop with Ctrl+C to let the current job finish. FX fetching is optional and disabled by default. Update a Phase 1 environment using the same two pip install commands above. `init-db` adds the model and forecast tables while preserving existing business tables.
 
 On macOS/Linux, replace `py -3.12` with `python3.12` and `.\.venv\Scripts\python.exe` with `.venv/bin/python`. Activation is optional; explicit interpreter paths avoid PowerShell execution-policy changes. Installed console commands also work as `.\.venv\Scripts\restockiq.exe ...`.
 

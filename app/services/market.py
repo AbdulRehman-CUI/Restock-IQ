@@ -11,9 +11,9 @@ from app.api.schemas.market import QuoteInput, RateSettings
 from app.core.errors import NotFound, StateConflict
 from app.core.config import TIMEZONE
 from app.db.market import MarketQuote, MarketSettings, PricingAssessment
-from app.db.models import Dataset, Product, SupplierQuote, FXRate, InventorySnapshot
+from app.db.models import Dataset, Product, SupplierQuote, InventorySnapshot
 from app.services.costs import landed_cost, money
-from app.services.fx import fx_status, instant, now_utc
+from app.services.fx import current_fx, demo_fx, fx_status, instant, now_utc
 from app.services.pricing import price_recommendation
 from app.services.recommendations import wire
 
@@ -214,7 +214,9 @@ def product_result(product, quote, rate_config, rate, fx, settings, now):
         if rate is None:
             warnings.append("MISSING_FX_RATE")
         if rate_config.mode == "reference_spread":
-            if fx["status"] == "stale":
+            if fx.get("data_status") == "demo":
+                warnings.append("DEMO_FX_RATE")
+            elif fx["status"] == "stale":
                 warnings.append("STALE_FX_RATE")
             if fx["refresh_failed"]:
                 warnings.append("FX_REFRESH_FAILED")
@@ -258,8 +260,8 @@ def product_result(product, quote, rate_config, rate, fx, settings, now):
 
 
 def create_assessment(db, settings, dataset_id, sku=None, now=None):
+    fx = current_fx(db, settings) if now is None else fx_status(db, settings, now)
     now = now or now_utc()
-    fx = fx_status(db, settings, now)
     with db.transaction() as session:
         dataset = dataset_record(session, dataset_id, lock=True)
         saved = settings_record(session, dataset_id)
@@ -269,16 +271,18 @@ def create_assessment(db, settings, dataset_id, sku=None, now=None):
             products = [p for p in products if p.sku == sku]
             if not products:
                 raise NotFound("Product not found")
-        synthetic_fx = dataset.provenance == "synthetic" and not config.real_fx_opt_in
+        synthetic_fx = dataset.provenance == "synthetic" and (
+            not config.real_fx_opt_in or (config.mode == "reference_spread" and not fx["observation"]))
         rate = None
         if synthetic_fx:
-            original = session.scalar(select(FXRate).where(FXRate.dataset_id == str(dataset_id), FXRate.currency == "USD",
-                FXRate.date <= dataset.end_date).order_by(FXRate.date.desc()).limit(1))
-            if original:
-                rate = original.pkr_per_unit * (1 + config.spread_percent / 100)
-            fx = dict(fx, status="stale" if rate else "unavailable", observation=None, age_seconds=None,
-                      refresh_failed=False, error=None,
-                      notice=f"Synthetic dataset FX as of {original.date if original else 'unavailable'}; no real FX applied.")
+            if not config.real_fx_opt_in:
+                fx = dict(fx, status="unavailable", data_status="unavailable", observation=None, age_seconds=None,
+                          rate=None, last_updated_at=None, provider=None, source=None,
+                          refresh_failed=False, error=None, fallback_reason=None,
+                          notice="Sample USD/PKR assumption is unavailable for this dataset.")
+            fx = demo_fx(session, dataset_id, fx)
+            if fx["rate"]:
+                rate = Decimal(fx["rate"]) * (1 + config.spread_percent / 100)
         elif config.mode == "manual_bank":
             rate = None if config.manual_valid_until and config.manual_valid_until <= now else config.manual_rate
         elif fx["observation"]:
@@ -287,14 +291,13 @@ def create_assessment(db, settings, dataset_id, sku=None, now=None):
             "effective_usd_pkr_rate": rate,
             "spread_percent": config.spread_percent if config.mode == "reference_spread" else None,
             "fx_observation_id": fx["observation"]["id"] if not synthetic_fx and config.mode == "reference_spread" and fx["observation"] else None,
-            "source": "synthetic dataset" if synthetic_fx else config.manual_source if config.mode == "manual_bank" else "ExchangeRate-API daily reference",
-            "observed_at": original.date.isoformat() if synthetic_fx and original else config.manual_observed_at if config.mode == "manual_bank" else
-                           fx["observation"]["observed_at"] if fx["observation"] else None,
+            "source": config.manual_source if config.mode == "manual_bank" else fx["source"] or "USD/PKR reference unavailable",
+            "observed_at": config.manual_observed_at if config.mode == "manual_bank" else fx["last_updated_at"],
             "manual_supplied_by": saved.supplied_by if saved and config.mode == "manual_bank" else None,
             "valid_until": config.manual_valid_until if config.mode == "manual_bank" else None}
         results = [product_result(p, selected_quote(session, dataset_id, p, now, config.order_quantity), config, rate, fx, settings, now) for p in products]
         inventories = list(session.scalars(select(InventorySnapshot.snapshot_date).where(InventorySnapshot.dataset_id == str(dataset_id)).distinct()))
-        label = ("Synthetic products with real FX" if config.real_fx_opt_in else "Entirely synthetic pricing") if dataset.provenance == "synthetic" else "Current replacement-cost estimate"
+        label = ("Entirely synthetic pricing" if synthetic_fx else "Synthetic products with real FX") if dataset.provenance == "synthetic" else "Current replacement-cost estimate"
         context = {"dataset_origin": dataset.end_date, "inventory_snapshot_dates": inventories,
                    "selling_price_as_of": dataset.end_date, "demand_forecast": "Not refreshed or used by current pricing",
                    "provenance": dataset.provenance}
@@ -302,9 +305,10 @@ def create_assessment(db, settings, dataset_id, sku=None, now=None):
             "label": label, "context": context, "settings": settings_view(saved), "fx": fx, "rate_selection": selection,
             "products": results, "assumptions": ASSUMPTIONS, "comparison": None})
         # Exclude retrieval clock: identical inputs, freshness states and calculation results reuse a snapshot.
-        uses_reference = not synthetic_fx and config.mode == "reference_spread" and any(
+        uses_reference = config.mode == "reference_spread" and any(
             p["quote"] and p["quote"]["values"]["currency"] == "USD" for p in results)
-        relevant_fx = {key: fx[key] for key in ("status", "observation", "refresh_failed", "error", "notice")} if uses_reference else None
+        relevant_fx = {key: fx[key] for key in ("status", "observation", "rate", "refresh_failed", "error",
+                                                 "fallback_reason")} if uses_reference else None
         relevant_products = [{key: value for key, value in p.items() if key != "quote_age_days"} for p in results]
         fingerprint = digest({"version": VERSION, "label": label, "settings": payload["settings"],
                               "products": relevant_products, "context": context, "fx": relevant_fx})

@@ -23,8 +23,9 @@ function alertLabel(code) {
     STALE_QUOTE: "Quote is old. Reconfirm price and costs with the supplier.",
     UNCONFIRMED_QUOTE: "Historical quote has not been reconfirmed for current pricing.",
     QUOTE_VALIDITY_UNKNOWN: "No quote expiry was supplied; validity is unknown.",
-    STALE_FX_RATE: "FX observation is old. Refresh or enter a bank selling rate.",
-    FX_REFRESH_FAILED: "FX refresh failed. The last valid observation was retained.",
+    STALE_FX_RATE: "This estimate uses a stale FX rate. Refresh or enter a bank selling rate.",
+    DEMO_FX_RATE: "This estimate uses the synthetic dataset’s USD/PKR assumption.",
+    FX_REFRESH_FAILED: "FX refresh failed. Check the rate source used for this estimate.",
     MISSING_FX_RATE: "FX unavailable. Refresh or explicitly enter a manual bank selling rate.",
     MISSING_QUOTE: "Enter a supplier quote for this product.",
     MISSING_ACQUISITION_COSTS: "Enter freight and other acquisition costs, including explicit zero values.",
@@ -136,6 +137,43 @@ function assessmentTable(result) {
     ${result.comparison ? details("Changes since previous comparable assessment", result.comparison) : ""}
     <div class="row"><a class="button secondary" href="/api/v1/market/assessments/${result.id}/export?format=csv">Export exact CSV</a><a class="button secondary" href="/api/v1/market/assessments/${result.id}/export">Export JSON with provenance</a></div>`;
 }
+function fxPanel(fx) {
+  const heading = "<h2>Daily reference USD / PKR</h2>";
+  if (!fx) return heading + '<p role="status">Loading FX status…</p>';
+  const labels = {live: "Live", cached: "Cached", stale: "Stale", demo: "Demo", unavailable: "Unavailable"};
+  const reasons = {
+    missing_api_key: "Authenticated FX is not configured.",
+    unsupported_provider: "The configured FX provider is unsupported.",
+    observation_expired: "The last saved market observation is out of date."
+  };
+  const observed = fx.data_status === "demo" ? fx.last_updated_at : marketTime(fx.last_updated_at);
+  return `<div class="row between">${heading}<span class="badge ${["live", "cached"].includes(fx.data_status) ? "" : "warning"}">${esc(labels[fx.data_status] || "Unavailable")}</span></div>
+    <p class="market-rate">${fx.rate != null ? number(fx.rate) + " PKR per USD" : "Reference rate unavailable"}</p>
+    <p>Source: ${fx.observation ? '<a href="https://www.exchangerate-api.com" rel="noopener">Rates By Exchange Rate API</a>' : esc(fx.source || "Unavailable")}<br>
+    Last updated: ${esc(observed)}${fx.observation ? "<br>Last successful fetch: " + esc(marketTime(fx.last_success_at)) : ""}</p>
+    ${fx.notice ? `<p class="metric-note">${esc(fx.notice)}</p>` : ""}
+    ${reasons[fx.fallback_reason] ? `<p class="metric-note">${esc(reasons[fx.fallback_reason])}</p>` : ""}
+    ${fx.refresh_failed ? `<p role="alert">${esc(fx.error)}. ${fx.observation ? "Showing the last saved rate." : fx.data_status === "demo" ? "Showing the sample rate." : "No saved rate is available."}</p>` : ""}
+    <button id="refresh-fx" ${fx.refresh_enabled === false ? "disabled" : ""}>Refresh FX</button>
+    ${fx.next_attempt_at && fx.refresh_enabled ? `<small> Next permitted refresh ${esc(marketTime(fx.next_attempt_at))}</small>` : ""}`;
+}
+
+function wireFx(query) {
+  marketAction("#refresh-fx", async () => {
+    const button = $("#refresh-fx");
+    const panel = $("#market-fx");
+    button.textContent = "Checking FX…";
+    try {
+      const fx = await post("market/fx/refresh" + query);
+      if (!panel.isConnected) return;
+      panel.innerHTML = fxPanel(fx);
+      wireFx(query);
+    } finally {
+      if (button.isConnected) button.textContent = "Refresh FX";
+    }
+  });
+}
+
 async function market() {
   $("#main").classList.add("market-screen");
   if (!state.dataset) {
@@ -143,8 +181,12 @@ async function market() {
     return;
   }
   const chosen = decodeURIComponent(location.hash.split("/").slice(1).join("/"));
+  const fxQuery = "?dataset_id=" + encodeURIComponent(state.dataset);
+  const title = hero("Market & Pricing", "Estimate replacement cost using daily FX and the latest supplier price you provide. No future-price prediction or supplier monitoring.");
+  $("#main").innerHTML = title + `<section class="panel">${fxPanel(null)}</section>`;
   const [fx, saved, catalog, history, quotes] = await Promise.all([
-    api("market/fx"), api(marketBase()+"/settings"), api(marketBase()+"/catalog"),
+    api("market/fx" + fxQuery).catch(() => ({data_status: "unavailable", notice: "Could not load FX status. Try refreshing."})),
+    api(marketBase()+"/settings"), api(marketBase()+"/catalog"),
     api(marketBase()+"/assessments"), api(marketBase()+"/quotes" + (chosen ? "?sku="+encodeURIComponent(chosen) : ""))
   ]);
   const synthetic = catalog.provenance === "synthetic";
@@ -152,13 +194,8 @@ async function market() {
   if (!selected) throw Error("Dataset has no products.");
   let result = history.length ? await api(`market/assessments/${history[0].id}`) : null;
   const quote = quotes.find(q => q.sku === selected.sku);
-  const o = fx.observation;
-  $("#main").innerHTML = hero("Market & Pricing", "Estimate replacement cost using daily FX and the latest supplier price you provide. No future-price prediction or supplier monitoring.") +
-    `<section class="panel"><div class="row between"><h2>Daily reference USD / PKR</h2><span class="badge ${fx.status === "fresh" ? "" : "warning"}">${esc(fx.status)}</span></div>
-    <p class="market-rate">${o ? number(o.rate) + " PKR per USD" : "Reference rate unavailable"}</p><p>Provider update: ${esc(marketTime(o?.observed_at))}<br>Last successful fetch: ${esc(marketTime(fx.last_success_at))}<br>Next provider update: ${esc(marketTime(o?.next_update_at))}</p>
-    <p class="metric-note">${esc(fx.notice)} Age: ${fx.age_seconds == null ? "unavailable" : number(fx.age_seconds / 3600)+" hours"}. Next permitted refresh: ${esc(marketTime(fx.next_attempt_at || null))}.</p>
-    ${fx.refresh_failed ? `<p role="alert">Refresh failed: ${esc(fx.error)}. Previous observation retained; age is based on provider time.</p>` : ""}
-    <button id="refresh-fx">Refresh FX</button> <a href="https://www.exchangerate-api.com" rel="noopener">Rates By Exchange Rate API</a></section>
+  $("#main").innerHTML = title +
+    `<section class="panel" id="market-fx" aria-live="polite">${fxPanel(fx)}</section>
     ${rateForm(saved, synthetic, catalog.products)}<p id="saved-settings" role="status"></p>
     <section class="panel"><h2>Current price adjustments</h2><button id="recalculate-market">Recalculate current pricing${chosen ? " for " + esc(chosen) : ""}</button><p class="metric-note">Minimum funding price covers the estimated replacement inputs only; it is not full business break-even. Review quote validity and constraints before acting.</p><div id="market-assessment">${assessmentTable(result)}</div></section>
     ${chosen ? '<section class="panel" id="market-product-detail"></section>' : ""}
@@ -179,7 +216,7 @@ async function market() {
   };
   renderDetail();
   wireRates(synthetic); wireQuote(catalog.products);
-  marketAction("#refresh-fx", async () => {await post("market/fx/refresh"); await market(); notify("FX status checked. Daily cooldown and provider timestamps apply.");});
+  wireFx(fxQuery);
   marketAction("#recalculate-market", async () => {
     result = await post(marketBase()+"/assessments", {sku: chosen || null});
     $("#market-assessment").innerHTML = assessmentTable(result); renderDetail(); notify("Current pricing assessment saved. Historical analyses are unchanged.");
