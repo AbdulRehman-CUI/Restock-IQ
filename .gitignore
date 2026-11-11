@@ -16,6 +16,10 @@ data/evaluation_only/
 artifacts/
 build/
 dist/
+PHASE1_REPORT.md
+PHASE2_REPORT.md
+PHASE3_REPORT.md
+PHASE4_REPORT.md
 
 # Local databases and trained model files, wherever they are created.
 *.sqlite
